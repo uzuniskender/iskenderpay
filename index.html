@@ -99,6 +99,7 @@ _fbAuth.onAuthStateChanged((user) => {
     if (plsUser) plsUser.textContent = '👤 ' + (user.displayName || user.email);
     if (plsEl) plsEl.style.display = 'flex';
     if (psEl)  { psEl.style.display = 'none'; psEl.classList.remove('active'); }
+    renderPlanNames();
   } else {
     _fbUid = null;
     window._fbUid = null;
@@ -393,20 +394,22 @@ select.fi{appearance:none}
   <div class="pls-title">Ödeme <span>Takvimi</span></div>
   <div class="pls-sub">Hangi planı açmak istiyorsunuz?</div>
   <div class="pls-user" id="PLS_USER"></div>
-  <div class="pls-cards">
+  <div class="pls-cards" id="PLS_CARDS">
     <div class="pls-card" onclick="selectPlan('plan1')">
       <div class="pls-card-ico">📋</div>
-      <div>
-        <div class="pls-card-name">Plan 1</div>
-        <div class="pls-card-desc">Birinci ödeme planınız</div>
+      <div style="flex:1">
+        <div class="pls-card-name" id="PLS_NAME1">Plan 1</div>
+        <div class="pls-card-desc" id="PLS_DESC1">Birinci ödeme planınız</div>
       </div>
+      <button onclick="event.stopPropagation();editPlanName('plan1')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px">✏️</button>
     </div>
     <div class="pls-card" onclick="selectPlan('plan2')">
       <div class="pls-card-ico">📊</div>
-      <div>
-        <div class="pls-card-name">Plan 2</div>
-        <div class="pls-card-desc">İkinci ödeme planınız</div>
+      <div style="flex:1">
+        <div class="pls-card-name" id="PLS_NAME2">Plan 2</div>
+        <div class="pls-card-desc" id="PLS_DESC2">İkinci ödeme planınız</div>
       </div>
+      <button onclick="event.stopPropagation();editPlanName('plan2')" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:4px">✏️</button>
     </div>
   </div>
   <button class="pls-signout" onclick="doGoogleSignOut()">Çıkış Yap</button>
@@ -854,6 +857,28 @@ function showPinErr(msg) {
   setTimeout(() => { inp.classList.remove('err'); document.getElementById('PE').textContent=''; inp.value=''; }, 2000);
 }
 
+function getPlanName(planId) {
+  return localStorage.getItem('v6-name-' + planId) || (planId === 'plan1' ? 'Plan 1' : 'Plan 2');
+}
+
+function editPlanName(planId) {
+  const current = getPlanName(planId);
+  const newName = prompt('Plan adını girin:', current);
+  if (newName && newName.trim()) {
+    localStorage.setItem('v6-name-' + planId, newName.trim());
+    renderPlanNames();
+  }
+}
+
+function renderPlanNames() {
+  const n1 = getPlanName('plan1');
+  const n2 = getPlanName('plan2');
+  const el1 = document.getElementById('PLS_NAME1');
+  const el2 = document.getElementById('PLS_NAME2');
+  if (el1) el1.textContent = n1;
+  if (el2) el2.textContent = n2;
+}
+
 function selectPlan(planId) {
   window._planId = planId;
   localStorage.setItem('v6-active-plan', planId);
@@ -867,7 +892,7 @@ function selectPlan(planId) {
   psEl.style.display = '';
   psEl.classList.add('active');
   // Plan adını PIN başlığında göster
-  const planName = window._planId === 'plan1' ? 'Plan 1' : 'Plan 2';
+  const planName = getPlanName(planId);
   const subEl = document.querySelector('.pin-sub');
   if (subEl) subEl.textContent = planName + ' şifresini girin';
   // PIN inputunu temizle
@@ -1664,7 +1689,8 @@ async function confirmBackup(){
   const payload=JSON.stringify({enc:true,data:enc,v:'5.0',hint:'odeme-takvimi-backup'});
   const blob=new Blob([payload],{type:'application/json;charset=utf-8'});
   const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');a.href=url;a.download='yedek-'+new Date().toISOString().split('T')[0]+'.json';
+  const planName = getPlanName(window._planId).replace(/\s+/g,'-');
+  const a=document.createElement('a');a.href=url;a.download='yedek-'+planName+'-'+new Date().toISOString().split('T')[0]+'.json';
   document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
   alert('Yedek alındı!\nDosya şifrenizle şifrelendi.');
 }
@@ -1886,7 +1912,7 @@ function initApp(){
   const ah=localStorage.getItem('v5-ahead')||'6';
   document.getElementById('AH').value=ah;
   // Plan adını sidebar'da göster
-  const planName = window._planId === 'plan1' ? 'Plan 1' : 'Plan 2';
+  const planName = getPlanName(window._planId);
   const planBtn = document.getElementById('PLANBTN');
   if (planBtn) planBtn.textContent = '🔄 ' + planName + ' › Değiştir';
   migrateCredDates();
