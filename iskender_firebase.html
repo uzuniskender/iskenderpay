@@ -39,6 +39,19 @@ window._fbLoad = async function() {
   return snap.exists() ? snap.data().data : null;
 };
 
+let _redirectChecked = false;
+
+// Önce redirect sonucunu kontrol et, sonra auth durumunu izle
+getRedirectResult(_fbAuth).then((result) => {
+  if (result && result.user) {
+    console.log('Redirect ile giriş başarılı:', result.user.email);
+  }
+}).catch(e => {
+  console.warn('redirect result error:', e);
+}).finally(() => {
+  _redirectChecked = true;
+});
+
 // Kullanıcı durumunu izle
 onAuthStateChanged(_fbAuth, (user) => {
   const loadEl = document.getElementById('LOAD');
@@ -56,18 +69,16 @@ onAuthStateChanged(_fbAuth, (user) => {
     if (nameEl) nameEl.textContent = user.displayName || user.email;
   } else {
     _fbUid = null;
-    if (glsEl) glsEl.style.display = 'flex';
-    if (psEl)  { psEl.style.display = 'none'; psEl.classList.remove('active'); }
-    if (appEl) appEl.style.display = 'none';
+    // Redirect kontrol edilmeden Google ekranını gösterme
+    setTimeout(() => {
+      if (!_fbUid) {
+        if (glsEl) glsEl.style.display = 'flex';
+        if (psEl)  { psEl.style.display = 'none'; psEl.classList.remove('active'); }
+        if (appEl) appEl.style.display = 'none';
+      }
+    }, 2000);
   }
 });
-
-// Redirect sonucunu kontrol et
-getRedirectResult(_fbAuth).then((result) => {
-  if (result && result.user) {
-    console.log('Redirect ile giriş başarılı:', result.user.email);
-  }
-}).catch(e => console.warn('redirect result error:', e));
 
 // Google ile giriş — popup kullan
 window.doGoogleLogin = async function() {
@@ -75,7 +86,6 @@ window.doGoogleLogin = async function() {
     const provider = new GoogleAuthProvider();
     await signInWithPopup(_fbAuth, provider);
   } catch(e) {
-    // Popup engellenirse redirect dene
     if (e.code === 'auth/popup-blocked' || e.code === 'auth/popup-closed-by-user') {
       try { await signInWithRedirect(_fbAuth, provider); } catch(e2) { alert('Giriş başarısız: ' + e2.message); }
     } else {
