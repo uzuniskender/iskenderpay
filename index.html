@@ -798,9 +798,14 @@ async function migrateToV7() {
   const migKey = 'v7-migrated-' + (_fbUid||'local') + '-' + window._planId;
   if (localStorage.getItem(migKey)) return;
 
-  // 1. Tüm recurring kayıtlarını bağımsız yap
+  // 1. Tüm recurring kayıtlarını bağımsız yap + groupId ata
+  // groupId: eski rp (parent ID) veya kendi ID'si — aynı akıştaki ödemeler aynı satırda kalır
   pays = pays.map(p => {
     const entry = {...p};
+    // groupId: eski rp varsa parent'ın ID'si, yoksa kendi ID'si
+    if (!entry.groupId) {
+      entry.groupId = String(Math.floor(Number(entry.rp || entry.id)));
+    }
     delete entry.rec;
     delete entry.rp;
     delete entry.rs;
@@ -819,7 +824,7 @@ async function migrateToV7() {
 
   await saveSecure();
   localStorage.setItem(migKey, '1');
-  console.log('v7 migrasyon tamamlandı — recurring kaldırıldı, paidItems oluşturuldu');
+  console.log('v7 migrasyon tamamlandı — groupId atandı, paidItems oluşturuldu');
 }
 
 // compat: xDec eski v4 notlar için hâlâ gerekli
@@ -1166,8 +1171,11 @@ function buildMx(all){
     let rowKey;
     if(p._cid!==undefined){
       rowKey='cred_'+String(p._cid);
+    } else if(p.groupId){
+      rowKey='g_'+p.groupId;
     } else {
-      rowKey='pay_'+p.name;
+      // groupId olmayan eski veri — kendi ID'si ile ayrı satır
+      rowKey='pay_'+String(Math.floor(Number(p.id)));
     }
     if(!mx[rowKey]) mx[rowKey]={_name:p.name,_rootId:rowKey};
     if(!mx[rowKey][mk]) mx[rowKey][mk]={try:0,status:'pending',items:[],_allPaid:true,_anyPartial:false,_anyOverdue:false};
@@ -1377,11 +1385,14 @@ function closeDV(){document.getElementById('DV').classList.remove('open');}
 function openEmptyCell(keyEnc,month){
   const key=decodeURIComponent(keyEnc);
   const all=getAllItems(),mx=buildMx(all);
-  const name=mx[key]?._name||key.replace('pay_','');
+  const name=mx[key]?._name||key.replace(/^(g_|pay_)/,'');
   const[y,mo]=month.split('-');
   const lbl=new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'long',year:'numeric'});
-  // Referans kaydı bul (aynı isimli son kayıt — tutar ve para birimi için)
-  const refItem=all.filter(p=>p.name===name&&!p._cid).sort((a,b)=>b.date.localeCompare(a.date))[0];
+  // Referans kaydı bul (aynı gruptaki son kayıt — tutar ve para birimi için)
+  const groupId=key.startsWith('g_')?key.replace('g_',''):null;
+  const refItem=groupId
+    ?all.filter(p=>p.groupId===groupId&&!p._cid).sort((a,b)=>b.date.localeCompare(a.date))[0]
+    :all.filter(p=>p.name===name&&!p._cid).sort((a,b)=>b.date.localeCompare(a.date))[0];
   const refAmt=refItem?refItem.amount:'';
   const refCur=refItem?refItem.currency||'TRY':'TRY';
   const refDay=refItem?parseLocalDate(refItem.date).getDate():1;
@@ -1418,10 +1429,13 @@ function addToMonth(keyEnc,month){
   if(!amt||!date){alert('Tutar ve tarih zorunlu');return;}
   const key=decodeURIComponent(keyEnc);
   const all=getAllItems(),mx=buildMx(all);
-  const name=mx[key]?._name||key.replace('pay_','');
-  const refItem=pays.find(p=>p.name===name);
+  const name=mx[key]?._name||key.replace(/^(g_|pay_)/,'');
+  // Aynı gruptaki referans kaydı bul
+  const groupId=key.startsWith('g_')?key.replace('g_',''):null;
+  const refItem=groupId?pays.find(p=>p.groupId===groupId):pays.find(p=>p.name===name);
   pays.push({
     id:Date.now()+Math.random(),
+    groupId:groupId||String(Date.now()),
     name,
     amount:amt,
     currency:cur,
@@ -1499,16 +1513,20 @@ function saveCellAmt(keyEnc,month){
 }
 function editByKey(keyEnc){
   const key=decodeURIComponent(keyEnc);
+  closeDV();
   if(key.startsWith('cred_')){
     const credId=key.replace('cred_','');
     const c=creds.find(x=>String(x.id)===credId);
-    closeDV();
     if(c) setTimeout(()=>editCred(c.id),50);
     else alert('Düzenlenecek kayıt bulunamadı.');
+  } else if(key.startsWith('g_')){
+    const gid=key.replace('g_','');
+    const p=pays.find(x=>x.groupId===gid);
+    if(p) setTimeout(()=>editPay(p.id),50);
+    else alert('Düzenlenecek kayıt bulunamadı.');
   } else {
-    const name=key.replace('pay_','');
-    const p=pays.find(x=>x.name===name);
-    closeDV();
+    const pid=key.replace('pay_','');
+    const p=pays.find(x=>String(Math.floor(Number(x.id)))===pid);
     if(p) setTimeout(()=>editPay(p.id),50);
     else alert('Düzenlenecek kayıt bulunamadı.');
   }
@@ -1523,11 +1541,16 @@ function delByKey(keyEnc){
     const c=creds.find(x=>String(x.id)===credId);
     if(c){c.pays.forEach(p=>hist.unshift({...p,name:c.name,currency:'TRY',delAt:new Date().toISOString()}));}
     creds=creds.filter(x=>String(x.id)!==credId);
-  } else {
-    const name=key.replace('pay_','');
-    const toDelete=pays.filter(p=>p.name===name);
+  } else if(key.startsWith('g_')){
+    const gid=key.replace('g_','');
+    const toDelete=pays.filter(p=>p.groupId===gid);
     toDelete.forEach(p=>hist.unshift({...p,delAt:new Date().toISOString()}));
-    pays=pays.filter(p=>p.name!==name);
+    pays=pays.filter(p=>p.groupId!==gid);
+  } else {
+    const pid=key.replace('pay_','');
+    const toDelete=pays.filter(p=>String(Math.floor(Number(p.id)))===pid);
+    toDelete.forEach(p=>hist.unshift({...p,delAt:new Date().toISOString()}));
+    pays=pays.filter(p=>String(Math.floor(Number(p.id)))!==pid);
   }
   saveSecure();
   closeDV();
@@ -1571,7 +1594,8 @@ function savePay(){
     const p=pays.find(x=>String(x.id)===String(eid));
     if(p) Object.assign(p,{name,amount,currency,date,category});
   } else {
-    // Yeni ekleme + kopyalama
+    // Yeni ekleme + kopyalama — tüm kopyalar aynı groupId'yi paylaşır
+    const groupId = String(Date.now());
     const [py,pm,pd]=date.split('-').map(Number);
     for(let i=0;i<=copyMonths;i++){
       const totalMo=(pm-1)+i;
@@ -1579,7 +1603,7 @@ function savePay(){
       const lastDay=new Date(yr,mo+1,0).getDate();
       const day=Math.min(pd,lastDay);
       const dateStr=toLocalISO(yr,mo,day);
-      pays.push({id:Date.now()+Math.random(),name,amount,currency,date:dateStr,category,status:'pending',paid:0});
+      pays.push({id:Date.now()+Math.random(),groupId,name,amount,currency,date:dateStr,category,status:'pending',paid:0});
     }
   }
   saveSecure();
