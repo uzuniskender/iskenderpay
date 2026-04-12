@@ -881,6 +881,45 @@ async function migrateToV7() {
   console.log('v7 migrasyon tamamlandı — groupId atandı, paidItems oluşturuldu');
 }
 
+// ── V7b MİGRASYON: rp olmadan groupId düzeltme (ay çakışması algoritması) ──
+async function migrateToV7b() {
+  const migKey = 'v7b-migrated-' + (_fbUid||'local') + '-' + window._planId;
+  if (localStorage.getItem(migKey)) return;
+
+  _suppressSave = true;
+
+  // Aynı isimli ödemeleri ay çakışmasına göre grupla
+  const byName = {};
+  pays.forEach(p => { if (!byName[p.name]) byName[p.name] = []; byName[p.name].push(p); });
+
+  Object.keys(byName).forEach(name => {
+    const entries = byName[name];
+    if (entries.length <= 1) {
+      if (!entries[0].groupId) entries[0].groupId = String(Math.floor(Number(entries[0].id)));
+      return;
+    }
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+    const groups = [];
+    entries.forEach(entry => {
+      const em = entry.date.substring(0, 7);
+      let placed = false;
+      for (const g of groups) {
+        if (!g.some(e => e.date.substring(0, 7) === em)) { g.push(entry); placed = true; break; }
+      }
+      if (!placed) groups.push([entry]);
+    });
+    groups.forEach(group => {
+      const gid = String(Math.floor(Number(group[0].id)));
+      group.forEach(e => { e.groupId = gid; });
+    });
+  });
+
+  _suppressSave = false;
+  await saveSecureNow();
+  localStorage.setItem(migKey, '1');
+  console.log('v7b migrasyon tamamlandı — groupId ay-çakışma algoritması ile düzeltildi');
+}
+
 // compat: xDec eski v4 notlar için hâlâ gerekli
 function xDec(e,p){try{const t=decodeURIComponent(escape(atob(e)));let r='';for(let i=0;i<t.length;i++)r+=String.fromCharCode(t.charCodeAt(i)^p.charCodeAt(i%p.length));return r;}catch(e){return null;}}
 function xEnc(t,p){let r='';for(let i=0;i<t.length;i++)r+=String.fromCharCode(t.charCodeAt(i)^p.charCodeAt(i%p.length));return btoa(unescape(encodeURIComponent(r)));}
@@ -922,6 +961,7 @@ async function doLogin() {
     _cryptoKey  = await deriveKey(val, dataSalt);
     await loadSecure();
     await migrateToV7();
+    await migrateToV7b();
     enterApp();
     return;
   }
@@ -941,6 +981,7 @@ async function doLogin() {
   try {
     await loadSecure();
     await migrateToV7();
+    await migrateToV7b();
   } catch(e) {
     showPinErr('Veri çözülemedi — şifre eşleşmiyor.'); return;
   }
