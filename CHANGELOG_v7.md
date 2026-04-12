@@ -81,3 +81,8 @@
 - Kredi (creds) sistemi değişmedi
 - Kişiler ve Notlar sistemi değişmedi
 - Backup/Restore formatı geriye uyumlu (v7 + eski v5 dosyalarını okuyabiliyor)
+
+## 11. _displayName Key Filter Fix
+- `_displayName` key'i matris ay key filtrelerinden geçiyordu
+- `x!=='_name'&&x!=='_rootId'` → `!x.startsWith('_')` olarak güncellendi (tüm 6 yerde)
+- Bu fix olmadan ay sütunları ve gün numaraları hatalı hesaplanıyordu

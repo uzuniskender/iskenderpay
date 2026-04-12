@@ -1294,7 +1294,7 @@ function render(){
   } else {
     rowKeys.sort((a,b)=>{
       const dayOf=k=>{
-        const mks=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort();
+        const mks=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort();
         if(!mks.length) return 99;
         const items=mx[k][mks[0]]?.items||[];
         return items[0]?parseLocalDate(items[0].date).getDate():99;
@@ -1336,7 +1336,7 @@ function render(){
   rowKeys.forEach(k=>{
     const dispName=mx[k]._displayName||mx[k]._name||k;
     // Ödeme gününü bul (ilk mevcut aydan al)
-    const _firstMk=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort()[0];
+    const _firstMk=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort()[0];
     const _dayNum=_firstMk&&mx[k][_firstMk]?.items?.[0]?.date?parseLocalDate(mx[k][_firstMk].items[0].date).getDate():'';
     html+=`<tr><td class="rh" onclick="openRow('${encodeURIComponent(k)}')" title="${esc(dispName)}">${esc(dispName)}</td><td style="text-align:center;font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;min-width:32px;max-width:36px;width:32px">${_dayNum}</td>`;
     months.forEach(m=>{
@@ -1377,7 +1377,7 @@ function render(){
 function openRow(keyEnc){
   const key=decodeURIComponent(keyEnc), all=getAllItems(), mx=buildMx(all);
   const dispName=mx[key]?._displayName||mx[key]?._name||key;
-  const months=Object.keys(mx[key]||{}).filter(k=>k!=='_name'&&k!=='_rootId').sort();
+  const months=Object.keys(mx[key]||{}).filter(k=>!k.startsWith('_')).sort();
   let h=`<div class="dtitle">${dispName}</div><div class="dsub">Tüm aylar — tıkla işaretlemek için</div>`;
   months.forEach(m=>{
     const c=mx[key][m];if(!c||!c.items)return;
@@ -2002,7 +2002,7 @@ function exportExcel(){
   let rowKeys=Object.keys(mx).filter(k=>mx[k]._name!==undefined);
   rowKeys.sort((a,b)=>{
     const dayOf=k=>{
-      const mks=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort();
+      const mks=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort();
       if(!mks.length) return 99;
       const items=mx[k][mks[0]]?.items||[];
       return items[0]?parseLocalDate(items[0].date).getDate():99;
@@ -2020,7 +2020,7 @@ function exportExcel(){
   rows.push(['Odeme','Gun',...mLabels,'Kalan Toplam'].join(SEP));
   rowKeys.forEach(k=>{
     const dispName=mx[k]._name||k;
-    const _firstMk=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort()[0];
+    const _firstMk=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort()[0];
     const _dayNum=_firstMk&&mx[k][_firstMk]?.items?.[0]?.date?parseLocalDate(mx[k][_firstMk].items[0].date).getDate():'';
     const cells=months.map(m=>{
       const c=mx[k]?.[m];
