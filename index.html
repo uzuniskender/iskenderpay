@@ -470,6 +470,10 @@ select.fi{appearance:none}
           </div>
           <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
             <input id="FLT" type="text" placeholder="🔍 Filtrele..." oninput="render()" style="background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;padding:5px 9px;color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;outline:none;width:130px">
+            <select id="SORT" onchange="chSort(this.value)" style="background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;padding:5px 9px;color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;outline:none">
+              <option value="date">📅 Tarihe Göre</option>
+              <option value="name">🔤 İsme Göre</option>
+            </select>
             <select id="AH" onchange="chAhead(this.value)" style="background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;padding:5px 9px;color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;outline:none">
               <option value="3">3 ay</option>
               <option value="6" selected>6 ay</option>
@@ -601,11 +605,7 @@ select.fi{appearance:none}
         <select class="fi" id="PK"><option>Fatura</option><option>Kira</option><option>Abonelik</option><option>Sigorta</option><option>Kredi</option><option>Diğer</option></select>
       </div>
     </div>
-    <div class="tog-row">
-      <div><div class="tog-lbl">Aylık Tekrarlayan</div><div class="tog-sub">Her ay otomatik yenilenir</div></div>
-      <label class="tog"><input type="checkbox" id="PR" onchange="updRec()"><span class="tog-sl"></span></label>
-    </div>
-    <div id="RMR" style="display:none" class="fg"><label class="fl">Kaç Ay? (0 = süresiz)</label><input class="fi mono-inp" id="RM2" type="number" value="0" inputmode="numeric"></div>
+    <div class="fg"><label class="fl">Kaç Aya Kopyalansın? (0 = sadece bu ay)</label><input class="fi mono-inp" id="COPYMO" type="number" value="0" min="0" max="60" inputmode="numeric" placeholder="0"></div>
     <div class="brow"><button class="btn bc" onclick="closeMov('PM2')">İptal</button><button class="btn bs" onclick="savePay()">Kaydet</button></div>
   </div>
 </div>
@@ -674,10 +674,15 @@ async function encryptData(data, key) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
   const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(data)));
-  // salt store separately; here just iv + cipher
   const buf = new Uint8Array(iv.byteLength + cipher.byteLength);
   buf.set(iv, 0); buf.set(new Uint8Array(cipher), iv.byteLength);
-  return btoa(String.fromCharCode(...buf));
+  // Büyük veri için chunk'lı btoa (spread operator stack overflow önlemi)
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < buf.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, buf.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
 }
 
 async function decryptData(b64, key) {
@@ -715,21 +720,22 @@ function getSalt(key) {
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let pays=[], creds=[], hist=[], rates={EUR:null,USD:null,GOLD:null};
-let persons=[], notes=[];
+let persons=[], notes=[], paidItems=[];
 let partialCtx=null, curTab=0;
+let sortMode='date'; // 'date' veya 'name'
 
 // ── SECURE STORAGE ──────────────────────────────────────────────────────────
 async function saveSecure() {
   if (!_cryptoKey) return;
-  const data = { pays, creds, hist, persons, notes };
+  const data = { pays, creds, hist, persons, notes, paidItems };
   const enc = await encryptData(data, _cryptoKey);
   // Firebase'e kaydet (birincil)
   if (window._fbSave) {
     try { await window._fbSave(enc); } catch(e) { console.warn('Firebase kayıt hatası:', e); }
   }
-  // localStorage yedek olarak da tut
-  localStorage.setItem('v5-data', enc);
-  localStorage.setItem('v5-rates', JSON.stringify(rates));
+  // localStorage yedek olarak da tut (plan'a özel key)
+  localStorage.setItem('v5-data-' + window._planId, enc);
+  localStorage.setItem('v5-rates-' + window._planId, JSON.stringify(rates));
 }
 
 async function loadSecure() {
@@ -738,8 +744,8 @@ async function loadSecure() {
   if (window._fbLoad) {
     try { enc = await window._fbLoad(); } catch(e) { console.warn('Firebase yükleme hatası:', e); }
   }
-  // Firebase'de yoksa localStorage'a bak
-  if (!enc) enc = localStorage.getItem('v5-data');
+  // Firebase'de yoksa localStorage'a bak (plan'a özel key, eski key'e fallback)
+  if (!enc) enc = localStorage.getItem('v5-data-' + window._planId) || localStorage.getItem('v5-data');
   if (!enc) {
     await migrateFromV4();
     return;
@@ -751,6 +757,7 @@ async function loadSecure() {
     hist    = data.hist    || [];
     persons = data.persons || [];
     notes   = data.notes   || [];
+    paidItems = data.paidItems || [];
     // Firebase'e de kaydet (localStorage'dan geliyorsa senkronize et)
     if (window._fbSave) {
       try { await window._fbSave(enc); } catch(e) {}
@@ -758,7 +765,7 @@ async function loadSecure() {
   } catch(e) {
     throw new Error('decrypt_failed');
   }
-  const r = localStorage.getItem('v5-rates');
+  const r = localStorage.getItem('v5-rates-' + window._planId) || localStorage.getItem('v5-rates');
   if (r) try { Object.assign(rates, JSON.parse(r)); } catch(e) {}
 }
 
@@ -784,6 +791,35 @@ async function migrateFromV4() {
   ['v4-pays','v4-creds','v4-hist','v4-persons','v4-notes','v4-pin','v4-rates',
    'v4-ahead','v4-pin-salt'].forEach(k => localStorage.removeItem(k));
   console.log('v4 → v5 migrasyon tamamlandı');
+}
+
+// ── V7 MİGRASYON: Recurring → Bağımsız, PaidItems Ayrıştırma ─────────────
+async function migrateToV7() {
+  const migKey = 'v7-migrated-' + (_fbUid||'local') + '-' + window._planId;
+  if (localStorage.getItem(migKey)) return;
+
+  // 1. Tüm recurring kayıtlarını bağımsız yap
+  pays = pays.map(p => {
+    const entry = {...p};
+    delete entry.rec;
+    delete entry.rp;
+    delete entry.rs;
+    delete entry.rm;
+    return entry;
+  });
+
+  // 2. Ödendi/Kısmi olanlardan paidItems oluştur (plan'da da kalacak)
+  if (!paidItems.length) {
+    const allItems = [...pays];
+    creds.forEach(c => c.pays.forEach(i => allItems.push({...i, name: c.name, currency: 'TRY', _cid: c.id, _ii: i.idx})));
+    paidItems = allItems
+      .filter(p => p.status === 'paid' || p.status === 'partial')
+      .map(p => ({...p, paidId: 'pi_' + Date.now() + '_' + Math.random()}));
+  }
+
+  await saveSecure();
+  localStorage.setItem(migKey, '1');
+  console.log('v7 migrasyon tamamlandı — recurring kaldırıldı, paidItems oluşturuldu');
 }
 
 // compat: xDec eski v4 notlar için hâlâ gerekli
@@ -826,6 +862,7 @@ async function doLogin() {
     _plainPin   = val;
     _cryptoKey  = await deriveKey(val, dataSalt);
     await loadSecure();
+    await migrateToV7();
     enterApp();
     return;
   }
@@ -844,6 +881,7 @@ async function doLogin() {
   _cryptoKey = await deriveKey(val, dataSalt);
   try {
     await loadSecure();
+    await migrateToV7();
   } catch(e) {
     showPinErr('Veri çözülemedi — şifre eşleşmiyor.'); return;
   }
@@ -883,7 +921,7 @@ function selectPlan(planId) {
   window._planId = planId;
   localStorage.setItem('v6-active-plan', planId);
   // Sıfırla
-  pays=[]; creds=[]; hist=[]; persons=[]; notes=[];
+  pays=[]; creds=[]; hist=[]; persons=[]; notes=[]; paidItems=[];
   _cryptoKey = null;
   _plainPin = '';
   // Plan seçim ekranını kapat, PIN ekranını aç
@@ -948,12 +986,12 @@ async function chPass() {
 
 // ── KUR ──────────────────────────────────────────────────────────────────────
 async function fetchRates(){
-  const s=localStorage.getItem('v5-rates');
+  const s=localStorage.getItem('v5-rates-'+window._planId)||localStorage.getItem('v5-rates');
   if(s) try{Object.assign(rates,JSON.parse(s));}catch(e){}
   renderKur();
   try{const r=await fetch('https://api.exchangerate-api.com/v4/latest/USD');if(r.ok){const d=await r.json();rates.USD=d.rates.TRY;rates.EUR=d.rates.TRY/d.rates.EUR;}}catch(e){}
   try{const r2=await fetch('https://api.gold-api.com/price/XAU');if(r2.ok){const d=await r2.json();if(rates.USD)rates.GOLD=(d.price/31.1035)*rates.USD;}}catch(e){}
-  localStorage.setItem('v5-rates',JSON.stringify(rates));
+  localStorage.setItem('v5-rates-'+window._planId,JSON.stringify(rates));
   renderKur();
   if(curTab===0) render();
 }
@@ -972,7 +1010,7 @@ function saveRates(){
   const u=parseFloat(document.getElementById('MU').value)||0;
   const g=parseFloat(document.getElementById('MG').value)||0;
   if(e)rates.EUR=e; if(u)rates.USD=u; if(g)rates.GOLD=g;
-  localStorage.setItem('v5-rates',JSON.stringify(rates));
+  localStorage.setItem('v5-rates-'+window._planId,JSON.stringify(rates));
   renderKur(); if(curTab===0)render();
   alert('Kurlar kaydedildi!');
 }
@@ -1033,46 +1071,12 @@ async function migrateCredDates(){
   genRec();
 }
 
-// ── RECURRING ────────────────────────────────────────────────────────────────
+// ── RECURRING (kaldırıldı — artık tüm ödemeler bağımsız) ────────────────────
 function parseLocalDate2(s){const[y,m,d]=s.split('-').map(Number);return{y,m,d};}
-function genRec(){
-  const now=new Date(), nowMK=now.getFullYear()*12+now.getMonth();
-  const ahead=parseInt(localStorage.getItem('v5-ahead')||'6');
-  // Pending rp kayıtlarını sınıflandır: tutar override'ları ve manuel eklenenler
-  const overrides={};
-  const manualAdded=[];
-  pays.filter(p=>p.rp&&p.status==='pending').forEach(p=>{
-    if(!p.rec){
-      // Manuel "bu aya ekle" ile eklenen — olduğu gibi koru
-      manualAdded.push({...p});
-    } else {
-      const parentOrig=pays.find(x=>x.id===p.rp&&!x.rp);
-      if(parentOrig&&p.amount!==parentOrig.amount) overrides[p.date+'_'+p.rp]=p.amount;
-    }
-  });
-  pays=pays.filter(p=>!p.rp||(p.status==='paid'||p.status==='partial'));
-  // Manuel eklenenları geri koy
-  manualAdded.forEach(p=>pays.push(p));
-  pays.filter(p=>p.rec&&!p.rp).forEach(p=>{
-    const [py,pm,pd2]=p.date.split('-').map(Number);
-    const origDay=pd2, oMK=py*12+(pm-1);
-    const lim=p.rm>0?oMK+p.rm-1:nowMK+ahead;
-    for(let mk=oMK+1;mk<=lim;mk++){
-      const yr=Math.floor(mk/12),mo=mk%12;
-      if(pays.some(x=>x.rp===p.id&&x.date.startsWith(yr+'-'+String(mo+1).padStart(2,'0')))) continue;
-      const lastDay=new Date(yr,mo+1,0).getDate();
-      const day=Math.min(origDay,lastDay);
-      const dateStr=toLocalISO(yr,mo,day);
-      const overrideKey=dateStr+'_'+p.id;
-      const amt=overrides[overrideKey]!==undefined?overrides[overrideKey]:p.amount;
-      pays.push({...p,id:Date.now()+Math.random(),date:dateStr,amount:amt,status:'pending',paid:0,rp:p.id,rs:p.rs||p.date});
-    }
-  });
-}
+function genRec(){} // v7: artık kullanılmıyor, compat için boş bırakıldı
+function chSort(v){ sortMode=v; render(); }
 async function chAhead(v){
   localStorage.setItem('v5-ahead',v);
-  genRec();
-  await save();
   render();
 }
 
@@ -1101,7 +1105,7 @@ function renderPersons(){
 function updateDatalist(){
   const dl = document.getElementById('PNLIST');
   if(!dl) return;
-  const usedNames = pays.filter(p=>!p.rp&&!p._cid).map(p=>p.name);
+  const usedNames = pays.filter(p=>!p._cid).map(p=>p.name);
   const options = persons.map(p=>{
     if(!usedNames.includes(p.name)) return p.name;
     let i=2; while(usedNames.includes(p.name+' '+i)) i++;
@@ -1152,47 +1156,44 @@ function delPerson(i){
 // ── RENDER ───────────────────────────────────────────────────────────────────
 function getAllItems(){
   const all=[...pays];
-  creds.forEach(c=>c.pays.forEach(i=>all.push({...i,name:c.name,currency:'TRY',rec:false,_cid:c.id,_ii:i.idx})));
+  creds.forEach(c=>c.pays.forEach(i=>all.push({...i,name:c.name,currency:'TRY',_cid:c.id,_ii:i.idx})));
   return all;
 }
 function buildMx(all){
-  const mx={}, nameCount={};
-  all.filter(p=>!p.rp&&!p._cid).forEach(p=>{
-    if(!nameCount[p.name]) nameCount[p.name]=[];
-    const rid=String(Math.floor(p.id));
-    if(!nameCount[p.name].includes(rid)) nameCount[p.name].push(rid);
-  });
-  const nameMap={};
-  all.filter(p=>!p.rp&&!p._cid).forEach(p=>{
-    const rid=String(Math.floor(p.id));
-    const list=nameCount[p.name];
-    nameMap[rid]=list.length>1?p.name+' '+(list.indexOf(rid)+1):p.name;
-  });
+  const mx={};
   all.forEach(p=>{
     const d=parseLocalDate(p.date),mk=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
-    let rootId;
+    let rowKey;
     if(p._cid!==undefined){
-      rootId='cred_'+String(p._cid);
-      if(!nameMap[rootId]) nameMap[rootId]=p.name;
+      rowKey='cred_'+String(p._cid);
     } else {
-      rootId=String(Math.floor(p.rp||p.id));
-      if(!nameMap[rootId]) nameMap[rootId]=p.name;
+      rowKey='pay_'+p.name;
     }
-    if(!rootId||rootId==='NaN'||rootId==='cred_NaN'||rootId==='cred_undefined') return;
-    if(!mx[rootId]) mx[rootId]={_name:nameMap[rootId],_rootId:rootId};
-    if(!mx[rootId][mk]) mx[rootId][mk]={try:0,status:'pending',items:[]};
-    mx[rootId][mk].try+=toTRY(p.amount,p.currency||'TRY');
-    mx[rootId][mk].items.push(p);
-    const s=p.status||'pending',cur=mx[rootId][mk].status;
-    if(s==='paid'&&cur!=='paid') mx[rootId][mk].status='paid';
-    else if(s==='partial'&&cur!=='paid') mx[rootId][mk].status='partial';
-    else if(s==='pending'&&cur==='pending'&&isOD(p)) mx[rootId][mk].status='overdue';
+    if(!mx[rowKey]) mx[rowKey]={_name:p.name,_rootId:rowKey};
+    if(!mx[rowKey][mk]) mx[rowKey][mk]={try:0,status:'pending',items:[],_allPaid:true,_anyPartial:false,_anyOverdue:false};
+    mx[rowKey][mk].try+=toTRY(p.amount,p.currency||'TRY');
+    mx[rowKey][mk].items.push(p);
+    const s=p.status||'pending';
+    if(s!=='paid') mx[rowKey][mk]._allPaid=false;
+    if(s==='partial') mx[rowKey][mk]._anyPartial=true;
+    if(s==='pending'&&isOD(p)) mx[rowKey][mk]._anyOverdue=true;
+  });
+  // Resolve statuses
+  Object.keys(mx).forEach(k=>{
+    Object.keys(mx[k]).forEach(mk=>{
+      if(mk.startsWith('_')) return;
+      const c=mx[k][mk];
+      if(c._allPaid) c.status='paid';
+      else if(c._anyPartial) c.status='partial';
+      else if(c._anyOverdue) c.status='overdue';
+      else c.status='pending';
+      delete c._allPaid; delete c._anyPartial; delete c._anyOverdue;
+    });
   });
   return mx;
 }
 
 function render(){
-  genRec();
   const all=getAllItems();
   const now=new Date();
   const curMK=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
@@ -1225,17 +1226,21 @@ function render(){
   const fltEl=document.getElementById('FLT');
   const fltVal=fltEl?fltEl.value.trim().toLocaleLowerCase('tr'):'';
   let rowKeys=Object.keys(mx).filter(k=>mx[k]._name!==undefined);
-  rowKeys.sort((a,b)=>{
-    const dayOf=k=>{
-      const mks=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort();
-      if(!mks.length) return 99;
-      const items=mx[k][mks[0]]?.items||[];
-      return items[0]?parseLocalDate(items[0].date).getDate():99;
-    };
-    const da=dayOf(a),db=dayOf(b);
-    if(da!==db) return da-db;
-    return (mx[a]._name||'').localeCompare(mx[b]._name||'','tr');
-  });
+  if(sortMode==='name'){
+    rowKeys.sort((a,b)=>(mx[a]._name||'').localeCompare(mx[b]._name||'','tr'));
+  } else {
+    rowKeys.sort((a,b)=>{
+      const dayOf=k=>{
+        const mks=Object.keys(mx[k]).filter(x=>x!=='_name'&&x!=='_rootId').sort();
+        if(!mks.length) return 99;
+        const items=mx[k][mks[0]]?.items||[];
+        return items[0]?parseLocalDate(items[0].date).getDate():99;
+      };
+      const da=dayOf(a),db=dayOf(b);
+      if(da!==db) return da-db;
+      return (mx[a]._name||'').localeCompare(mx[b]._name||'','tr');
+    });
+  }
   if(fltVal) rowKeys=rowKeys.filter(k=>(mx[k]._name||'').toLocaleLowerCase('tr').includes(fltVal));
   const allMonths=Array.from(monthSet).sort();
   const months=allMonths.filter(m=>rowKeys.some(k=>{const c=mx[k]?.[m];return c&&c.status!=='paid';}));
@@ -1343,19 +1348,25 @@ function openCell(keyEnc,month){
     ${orig&&rates[orig.currency]?`<div style="font-size:10px;color:var(--muted);margin-top:5px">1 ${orig.currency==='EUR'?'EUR':'gr'} = ${orig.currency==='EUR'?fmt(rates.EUR):fmt(rates.GOLD)}</div>`:''}
   </div>`;
   const cellKey=encodeURIComponent(key),cellMo=month;
-  // Manuel eklenen ay kaydı mı kontrol et
-  const isManual=c.items.length===1&&c.items[0].rp&&!c.items[0].rec;
-  const delBtn=isManual
-    ?`<button class="dact da-del" onclick="delMonthEntry('${encodeURIComponent(String(c.items[0].id))}')">Sil</button>`
-    :`<button class="dact da-del" onclick="delByKey('${cellKey}')">Sil</button>`;
+  // Her hücrede tek veya çok kayıt olabilir
+  const isSingleItem=c.items.length===1&&!c.items[0]._cid;
+  const delBtn=isSingleItem
+    ?`<button class="dact da-del" onclick="delMonthEntry('${encodeURIComponent(String(c.items[0].id))}')">Bu Ayı Sil</button>`
+    :`<button class="dact da-del" onclick="delCellItems('${cellKey}','${cellMo}')">Bu Ayı Sil</button>`;
+  // Düzenle butonu: hücredeki ilk öğeyi direkt ID ile düzenle
+  const editItem=c.items.find(x=>!x._cid);
+  const editBtn=editItem
+    ?`<button class="dact da-edit" onclick="closeDV();setTimeout(()=>editPay('${editItem.id}'),50)">Düzenle</button>`
+    :`<button class="dact da-edit" onclick="editByKey('${cellKey}')">Düzenle</button>`;
   h+=`<div class="dacts">
     ${s!=='paid'?`<button class="dact da-ok" onclick="markOk('${cellKey}','${cellMo}')">✓ Ödendi</button>`:''}
     ${s==='partial'?`<button class="dact da-part" onclick="resetPartial('${cellKey}','${cellMo}')">↺ Sıfırla</button>`:''}
     ${(s==='pending'||s==='overdue')?`<button class="dact da-part" onclick="openKM('${cellKey}','${cellMo}')">½ Kısmi</button>`:''}
     ${s==='partial'?`<button class="dact da-part" onclick="openKM('${cellKey}','${cellMo}')">+ Ekle</button>`:''}
     ${(s==='paid'||s==='partial')?`<button class="dact da-undo" onclick="undoCell('${cellKey}','${cellMo}')">↩ Geri Al</button>`:''}
-    <button class="dact da-edit" onclick="editByKey('${cellKey}')">Düzenle</button>
+    ${editBtn}
     ${delBtn}
+    <button class="dact da-del" onclick="delByKey('${cellKey}')" style="font-size:10px">Tümünü Sil</button>
     <button class="dact da-close" onclick="closeDV()">Kapat</button>
   </div>`;
   document.getElementById('DC').innerHTML=h;
@@ -1366,11 +1377,11 @@ function closeDV(){document.getElementById('DV').classList.remove('open');}
 function openEmptyCell(keyEnc,month){
   const key=decodeURIComponent(keyEnc);
   const all=getAllItems(),mx=buildMx(all);
-  const name=mx[key]?._name||key;
+  const name=mx[key]?._name||key.replace('pay_','');
   const[y,mo]=month.split('-');
   const lbl=new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'long',year:'numeric'});
-  // Referans kaydı bul (ana kayıt veya son kayıt — tutar ve para birimi için)
-  const refItem=all.filter(p=>(String(Math.floor(p.rp||p.id))===String(Math.floor(Number(key)))||String(p.id)===key)&&!p._cid).sort((a,b)=>b.date.localeCompare(a.date))[0];
+  // Referans kaydı bul (aynı isimli son kayıt — tutar ve para birimi için)
+  const refItem=all.filter(p=>p.name===name&&!p._cid).sort((a,b)=>b.date.localeCompare(a.date))[0];
   const refAmt=refItem?refItem.amount:'';
   const refCur=refItem?refItem.currency||'TRY':'TRY';
   const refDay=refItem?parseLocalDate(refItem.date).getDate():1;
@@ -1407,22 +1418,17 @@ function addToMonth(keyEnc,month){
   if(!amt||!date){alert('Tutar ve tarih zorunlu');return;}
   const key=decodeURIComponent(keyEnc);
   const all=getAllItems(),mx=buildMx(all);
-  const name=mx[key]?._name||key;
-  const parent=pays.find(p=>!p.rp&&(String(p.id)===key||String(Math.floor(p.id))===String(Math.floor(Number(key)))));
-  // rp ile bağla (doğru satırda görünsün) ama rec:false ile işaretle
-  // genRec bu kaydı manualAdded olarak saklayıp silmeyecek
+  const name=mx[key]?._name||key.replace('pay_','');
+  const refItem=pays.find(p=>p.name===name);
   pays.push({
     id:Date.now()+Math.random(),
     name,
     amount:amt,
     currency:cur,
     date,
-    category:parent?parent.category||'Diğer':'Diğer',
+    category:refItem?refItem.category||'Diğer':'Diğer',
     status:'pending',
-    paid:0,
-    rec:false,
-    rm:0,
-    rp:parent?parent.id:undefined
+    paid:0
   });
   saveSecure();
   closeDV();
@@ -1436,6 +1442,8 @@ function markOk(keyEnc,month){
   items.forEach(p=>{
     if(p._cid){const c=creds.find(x=>x.id===p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.status='paid';i.paid=i.amount;}}}
     else{const orig=pays.find(x=>String(x.id)===String(p.id));if(orig){orig.status='paid';orig.paid=toTRY(orig.amount,orig.currency||'TRY');}}
+    // paidItems'a bağımsız kopya ekle
+    paidItems.push({...p, paidId:'pi_'+Date.now()+'_'+Math.random(), status:'paid', paid:toTRY(p.amount,p.currency||'TRY'), paidAt:new Date().toISOString()});
   });
   save().then(()=>{closeDV();render();});
 }
@@ -1446,6 +1454,9 @@ function undoCell(keyEnc,month){
   items.forEach(p=>{
     if(p._cid){const c=creds.find(x=>x.id===p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.status='pending';i.paid=0;}}}
     else{const orig=pays.find(x=>String(x.id)===String(p.id));if(orig){orig.status='pending';orig.paid=0;}}
+    // paidItems'dan kaldır
+    const pidx=paidItems.findIndex(x=>String(x.id)===String(p.id)&&x.date===p.date);
+    if(pidx>=0) paidItems.splice(pidx,1);
   });
   save().then(()=>{closeDV();render();});
 }
@@ -1467,6 +1478,10 @@ function doPartial(){
   items.forEach(p=>{
     if(p._cid){const c=creds.find(x=>x.id===p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.paid=(i.paid||0)+amt;i.status=i.paid>=i.amount?'paid':'partial';}}}
     else{const orig=pays.find(x=>String(x.id)===String(p.id));if(orig){orig.paid=(orig.paid||0)+amt;orig.status=orig.paid>=toTRY(orig.amount,orig.currency||'TRY')?'paid':'partial';}}
+    // paidItems'a kısmi ödeme kaydı ekle
+    const existing=paidItems.find(x=>String(x.id)===String(p.id)&&x.date===p.date);
+    if(existing){ existing.paid=(existing.paid||0)+amt; existing.status=existing.paid>=toTRY(p.amount,p.currency||'TRY')?'paid':'partial'; }
+    else { paidItems.push({...p, paidId:'pi_'+Date.now()+'_'+Math.random(), status:'partial', paid:amt, paidAt:new Date().toISOString()}); }
   });
   save().then(()=>{closeMov('KM');render();});
 }
@@ -1484,40 +1499,35 @@ function saveCellAmt(keyEnc,month){
 }
 function editByKey(keyEnc){
   const key=decodeURIComponent(keyEnc);
-  const p=pays.find(x=>!x.rp&&(String(x.id)===key||String(Math.floor(x.id))===String(Math.floor(Number(key)))));
-  const c=!p?creds.find(x=>String(x.id)===key):null;
-  closeDV();
-  setTimeout(()=>{
-    if(p) editPay(p.id);
-    else if(c) editCred(c.id);
+  if(key.startsWith('cred_')){
+    const credId=key.replace('cred_','');
+    const c=creds.find(x=>String(x.id)===credId);
+    closeDV();
+    if(c) setTimeout(()=>editCred(c.id),50);
     else alert('Düzenlenecek kayıt bulunamadı.');
-  },50);
+  } else {
+    const name=key.replace('pay_','');
+    const p=pays.find(x=>x.name===name);
+    closeDV();
+    if(p) setTimeout(()=>editPay(p.id),50);
+    else alert('Düzenlenecek kayıt bulunamadı.');
+  }
 }
 function delByKey(keyEnc){
   const key=decodeURIComponent(keyEnc);
   const all=getAllItems(),mx=buildMx(all);
   const dispName=mx[key]?._name||key;
-  if(!confirm(dispName+' silinecek. Emin misin?'))return;
-  const keyFloor=String(Math.floor(Number(key)));
-  // Ana kayıt ve tüm bağlı kayıtları sil
-  // Ama manuel eklenen (rec:false, rp var) kayıtlar sadece kendileri silinmeli
-  const mainPay=pays.find(p=>String(p.id)===key&&!p.rp);
-  if(mainPay){
-    // Ana kayıt — tüm bağlıları da sil
-    const toDelete=pays.filter(p=>
-      String(p.id)===key||
-      String(p.rp)===key||
-      String(Math.floor(Number(p.id)))===keyFloor||
-      String(Math.floor(Number(p.rp)))===keyFloor
-    );
-    toDelete.forEach(p=>hist.unshift({...p,delAt:new Date().toISOString()}));
-    const deleteIds=new Set(toDelete.map(p=>String(p.id)));
-    pays=pays.filter(p=>!deleteIds.has(String(p.id)));
-    creds=creds.filter(c=>String(c.id)!==key);
+  if(!confirm(dispName+' — tüm aylar silinecek. Emin misin?'))return;
+  if(key.startsWith('cred_')){
+    const credId=key.replace('cred_','');
+    const c=creds.find(x=>String(x.id)===credId);
+    if(c){c.pays.forEach(p=>hist.unshift({...p,name:c.name,currency:'TRY',delAt:new Date().toISOString()}));}
+    creds=creds.filter(x=>String(x.id)!==credId);
   } else {
-    // Manuel eklenmiş ay kaydı — sadece kendini sil
-    const p=pays.find(p=>String(p.id)===key);
-    if(p){hist.unshift({...p,delAt:new Date().toISOString()});pays=pays.filter(x=>String(x.id)!==key);}
+    const name=key.replace('pay_','');
+    const toDelete=pays.filter(p=>p.name===name);
+    toDelete.forEach(p=>hist.unshift({...p,delAt:new Date().toISOString()}));
+    pays=pays.filter(p=>p.name!==name);
   }
   saveSecure();
   closeDV();
@@ -1531,9 +1541,8 @@ function openPay(){
   const _nd=new Date();document.getElementById('PD').value=toLocalISO(_nd.getFullYear(),_nd.getMonth(),_nd.getDate());
   ['PN','PA'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('PC').value='TRY';
-  document.getElementById('PR').checked=false;
-  document.getElementById('RM2').value=0;
-  updRec(); updateDatalist();
+  document.getElementById('COPYMO').value=0;
+  updateDatalist();
   document.getElementById('PM2').classList.add('open');
 }
 function editPay(id){
@@ -1545,9 +1554,7 @@ function editPay(id){
   document.getElementById('PC').value=p.currency||'TRY';
   document.getElementById('PD').value=p.date;
   document.getElementById('PK').value=p.category||'Diğer';
-  document.getElementById('PR').checked=!!p.rec;
-  document.getElementById('RM2').value=p.rm||0;
-  updRec();
+  document.getElementById('COPYMO').value=0;
   document.getElementById('PM2').classList.add('open');
 }
 function savePay(){
@@ -1556,21 +1563,29 @@ function savePay(){
   const currency=document.getElementById('PC').value;
   const date=document.getElementById('PD').value;
   const category=document.getElementById('PK').value;
-  const rec=document.getElementById('PR').checked;
-  const rm=parseInt(document.getElementById('RM2').value)||0;
+  const copyMonths=parseInt(document.getElementById('COPYMO').value)||0;
   if(!name||!amount||!date){alert('Ad, tutar ve tarih zorunlu');return;}
   const eid=document.getElementById('EID').value;
   if(eid){
+    // Düzenleme — sadece bu kaydı güncelle
     const p=pays.find(x=>String(x.id)===String(eid));
-    if(p){ pays=pays.filter(x=>x.rp!==p.id||(x.status==='paid'||x.status==='partial')); Object.assign(p,{name,amount,currency,date,category,rec,rm}); }
+    if(p) Object.assign(p,{name,amount,currency,date,category});
   } else {
-    pays.push({id:Date.now(),name,amount,currency,date,category,status:'pending',paid:0,rec,rm,rs:rec?date:null});
+    // Yeni ekleme + kopyalama
+    const [py,pm,pd]=date.split('-').map(Number);
+    for(let i=0;i<=copyMonths;i++){
+      const totalMo=(pm-1)+i;
+      const yr=py+Math.floor(totalMo/12), mo=totalMo%12;
+      const lastDay=new Date(yr,mo+1,0).getDate();
+      const day=Math.min(pd,lastDay);
+      const dateStr=toLocalISO(yr,mo,day);
+      pays.push({id:Date.now()+Math.random(),name,amount,currency,date:dateStr,category,status:'pending',paid:0});
+    }
   }
   saveSecure();
   closeMov('PM2');
   render();
 }
-function updRec(){document.getElementById('RMR').style.display=document.getElementById('PR').checked?'block':'none';}
 
 // ── KREDİ CRUD ───────────────────────────────────────────────────────────────
 function openCred(){
@@ -1630,11 +1645,23 @@ function renderHist(){
   if(!hist.length){hl.innerHTML='<div class="empty"><div class="ico">🗃️</div><p>Silinmiş ödeme yok</p></div>';return;}
   hl.innerHTML=hist.map((p,i)=>`
     <div class="hi">
-      <div class="hi-inf"><div class="hi-name">${esc(p.name)}</div><div class="hi-date">Silindi: ${new Date(p.delAt).toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'})}</div></div>
+      <div class="hi-inf"><div class="hi-name">${esc(p.name)}</div><div class="hi-date">Silindi: ${new Date(p.delAt).toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'})} · ${fmtD(p.date)}</div></div>
       <div class="hi-amt">${fmtA(p.amount,p.currency||'TRY')}</div>
+      <button onclick="editHistItem(${i})" style="background:rgba(192,132,252,.15);color:var(--acc2);border:1px solid rgba(192,132,252,.2);border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer;flex-shrink:0">Düzenle</button>
       <button onclick="restoreFromHist(${i})" style="background:rgba(74,222,128,.15);color:var(--ok);border:1px solid rgba(74,222,128,.2);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer;flex-shrink:0">↩ Geri Al</button>
       <button class="hi-del" onclick="delHist(${i})">Sil</button>
     </div>`).join('');
+}
+function editHistItem(idx){
+  const p=hist[idx]; if(!p) return;
+  const newName=prompt('Ödeme adı:',p.name); if(newName===null) return;
+  const newAmt=prompt('Tutar:',p.amount); if(newAmt===null) return;
+  const newDate=prompt('Tarih (YYYY-MM-DD):',p.date); if(newDate===null) return;
+  if(newName.trim()) p.name=newName.trim();
+  const parsedAmt=parseFloat(newAmt);
+  if(!isNaN(parsedAmt)&&parsedAmt>0) p.amount=parsedAmt;
+  if(newDate.match(/^\d{4}-\d{2}-\d{2}$/)) p.date=newDate;
+  saveSecure(); renderHist();
 }
 function delMonthEntry(idEnc){
   const id=decodeURIComponent(idEnc);
@@ -1643,13 +1670,27 @@ function delMonthEntry(idEnc){
   if(p){hist.unshift({...p,delAt:new Date().toISOString()});pays=pays.filter(x=>String(x.id)!==id);}
   saveSecure();closeDV();render();
 }
+function delCellItems(keyEnc,month){
+  const key=decodeURIComponent(keyEnc);
+  if(!confirm('Bu aydaki kayıtlar silinecek. Emin misin?'))return;
+  const all=getAllItems(),mx=buildMx(all);
+  const items=(mx[key]?.[month]?.items)||[];
+  items.forEach(p=>{
+    if(p._cid) return; // kredi taksitini buradan silme
+    hist.unshift({...p,delAt:new Date().toISOString()});
+    pays=pays.filter(x=>String(x.id)!==String(p.id));
+  });
+  saveSecure();closeDV();render();
+}
 
 function restoreFromHist(i){
   const p=hist[i];
   if(!p)return;
-  // Geri yükle
+  // Geri yükle (düzenlenmiş haliyle)
   const restored={...p};
   delete restored.delAt;
+  restored.status='pending';
+  restored.paid=0;
   pays.push(restored);
   hist.splice(i,1);
   save().then(()=>{renderHist();render();});
@@ -1660,8 +1701,8 @@ function clrHist(){if(!confirm('Tüm geçmişi sil?'))return;hist=[];save().then
 
 // ── AYARLAR ───────────────────────────────────────────────────────────────────
 function renderAI(){
-  document.getElementById('AI').innerHTML=`v5.0 🔐 AES-256 — ${pays.filter(p=>!p.rp).length} ödeme · ${creds.length} kredi`;
-  const r=JSON.parse(localStorage.getItem('v5-rates')||'{}');
+  document.getElementById('AI').innerHTML=`v7.0 🔐 AES-256 — ${pays.length} ödeme · ${creds.length} kredi · ${paidItems.length} yapılan`;
+  const r=JSON.parse(localStorage.getItem('v5-rates-'+window._planId)||localStorage.getItem('v5-rates')||'{}');
   if(r.EUR) document.getElementById('ME').value=r.EUR.toFixed(2);
   if(r.USD) document.getElementById('MU').value=r.USD.toFixed(2);
   if(r.GOLD) document.getElementById('MG').value=r.GOLD.toFixed(0);
@@ -1684,9 +1725,9 @@ async function confirmBackup(){
     document.getElementById('BPP').value=''; return;
   }
   closeMov('BPM');
-  const data={pays,creds,hist,persons,notes,at:new Date().toISOString(),v:'5.0'};
+  const data={pays,creds,hist,persons,notes,paidItems,at:new Date().toISOString(),v:'7.0'};
   const enc=xEnc(JSON.stringify(data),entered);
-  const payload=JSON.stringify({enc:true,data:enc,v:'5.0',hint:'odeme-takvimi-backup'});
+  const payload=JSON.stringify({enc:true,data:enc,v:'7.0',hint:'odeme-takvimi-backup'});
   const blob=new Blob([payload],{type:'application/json;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const planName = getPlanName(window._planId).replace(/\s+/g,'-');
@@ -1720,7 +1761,7 @@ function doRestore(){
   if(!st.dataset.d){st.textContent='Önce dosya seç';return;}
   if(!confirm('Mevcut veriler silinecek. Emin misin?'))return;
   const d=JSON.parse(st.dataset.d);
-  pays=d.pays||[];creds=d.creds||[];hist=d.hist||[];persons=d.persons||[];notes=d.notes||[];
+  pays=d.pays||[];creds=d.creds||[];hist=d.hist||[];persons=d.persons||[];notes=d.notes||[];paidItems=d.paidItems||[];
   save().then(()=>{migrateCredDates();closeMov('RM');render();});
   alert('Veriler yüklendi!');
 }
@@ -1796,8 +1837,6 @@ function resetPartial(keyEnc,month){
 // ── YAPILAN ÖDEMELER ──────────────────────────────────────────────────────────
 function renderPaid(){
   document.getElementById('OPD').textContent=new Date().toLocaleDateString('tr-TR',{day:'numeric',month:'short',year:'numeric'});
-  const all=getAllItems();
-  const paidItems=all.filter(p=>(p.status==='paid'||p.status==='partial'));
   const monthSet=new Set(paidItems.map(p=>{const d=parseLocalDate(p.date);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}));
   const months=Array.from(monthSet).sort().reverse();
   const sel=document.getElementById('PFLT2');
@@ -1805,7 +1844,7 @@ function renderPaid(){
   sel.innerHTML='<option value="all">Tüm aylar</option>'+months.map(m=>{const[y,mo]=m.split('-');const lbl=new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'long',year:'numeric'});return`<option value="${m}"${curVal===m?' selected':''}>${lbl}</option>`;}).join('');
   const flt=(document.getElementById('PFLT')?.value||'').trim().toLowerCase();
   const mflt=sel.value;
-  let filtered=paidItems;
+  let filtered=[...paidItems];
   if(flt) filtered=filtered.filter(p=>p.name.toLowerCase().includes(flt));
   if(mflt!=='all') filtered=filtered.filter(p=>{const d=parseLocalDate(p.date);const mk=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');return mk===mflt;});
   filtered.sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -1823,8 +1862,9 @@ function renderPaid(){
       const tryAmt=toTRY(p.amount,p.currency||'TRY');
       const paidAmt=p.status==='paid'?tryAmt:(p.paid||0);
       const isPartial=p.status==='partial';
+      const pidIdx=paidItems.indexOf(p);
       html+=`<div style="background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:10px 13px;margin-bottom:7px;display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <div style="min-width:0">
+        <div style="min-width:0;flex:1">
           <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtD(p.date)}</div>
         </div>
@@ -1832,10 +1872,32 @@ function renderPaid(){
           <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600;color:${isPartial?'var(--ora)':'var(--ok)'}">${fmt(paidAmt)}</div>
           ${isPartial?`<div style="font-size:10px;color:var(--muted)">${fmt(tryAmt-paidAmt)} kaldı</div>`:''}
         </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button onclick="editPaidItem(${pidIdx})" style="background:rgba(192,132,252,.15);color:var(--acc2);border:1px solid rgba(192,132,252,.2);border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer">Düzenle</button>
+          <button onclick="delPaidItem(${pidIdx})" style="background:rgba(248,113,113,.12);color:var(--danger);border:1px solid rgba(248,113,113,.2);border-radius:6px;padding:4px 7px;font-size:10px;font-weight:600;cursor:pointer">Sil</button>
+        </div>
       </div>`;
     });
   });
   pl.innerHTML=html;
+}
+
+// Yapılan Ödemeler düzenleme/silme (plan'a etkisi yok)
+function editPaidItem(idx){
+  const p=paidItems[idx]; if(!p) return;
+  const newName=prompt('Ödeme adı:',p.name); if(newName===null) return;
+  const newAmt=prompt('Ödenen tutar (₺):',p.paid||0); if(newAmt===null) return;
+  const newDate=prompt('Tarih (YYYY-MM-DD):',p.date); if(newDate===null) return;
+  if(newName.trim()) p.name=newName.trim();
+  const parsedAmt=parseFloat(newAmt);
+  if(!isNaN(parsedAmt)&&parsedAmt>=0) p.paid=parsedAmt;
+  if(newDate.match(/^\d{4}-\d{2}-\d{2}$/)) p.date=newDate;
+  saveSecure(); renderPaid();
+}
+function delPaidItem(idx){
+  if(!confirm(paidItems[idx]?.name+' yapılan ödemelerden silinecek. Plan etkilenmez. Emin misin?'))return;
+  paidItems.splice(idx,1);
+  saveSecure(); renderPaid();
 }
 
 // ── EXCEL EXPORT ──────────────────────────────────────────────────────────────
@@ -1911,6 +1973,9 @@ function switchPlan() {
 function initApp(){
   const ah=localStorage.getItem('v5-ahead')||'6';
   document.getElementById('AH').value=ah;
+  // Sort mode restore
+  const sortEl=document.getElementById('SORT');
+  if(sortEl) sortEl.value=sortMode;
   // Plan adını sidebar'da göster
   const planName = getPlanName(window._planId);
   const planBtn = document.getElementById('PLANBTN');
