@@ -310,7 +310,7 @@ function renderActLog() {
         const cfg=(LOG_ICONS&&LOG_ICONS[e.type])||{icon:'📋',bg:'rgba(255,255,255,.07)'};
         const time=e.at?window.fmtLogTime(e.at):'';
         const nav=(typeof e.navTab==='number'&&e.navTab>=0)?e.navTab:-1;
-        const title=e.title?String(e.title):'(başlık yok)';
+        const title=(e.title?String(e.title):'(başlık yok)')+(e.hareket&&e.hareket.iptal?' · geri alındı':(e.hareket&&e.hareket.duzenlendi?' · düzenlendi':''));
         const detail=e.detail?String(e.detail):'';
         const isSel=_logSelected.has(i);
         const rowBg=isSel?'rgba(96,165,250,.08)':'transparent';

@@ -54,10 +54,19 @@ function markOk(keyEnc,month) {
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
   items.forEach(p=>{
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.status='paid';i.paid=i.amount;}}}
-    else{const orig=window.findPayById(p.id);if(orig){orig.status='paid';orig.paid=toTRY(orig.amount,orig.currency||'TRY',window.rates);}}
-    window.Store.push('paidItems', {...p, paidId:'pi_'+Date.now()+'_'+Math.random(), status:'paid', paid:toTRY(p.amount,p.currency||'TRY',window.rates), paidAt:new Date().toISOString()});
-    try{window.addLog('paid','Ödeme yapıldı',(p.name||'')+' · ₺'+Number(toTRY(p.amount,p.currency||'TRY',window.rates)).toLocaleString('tr-TR',{maximumFractionDigits:0}),1,{groupId:p.groupId, personId:p.personId});}catch(e){}
+    let _onceki=0, _tam=toTRY(p.amount,p.currency||'TRY',window.rates);
+    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){_onceki=i.paid||0;_tam=i.amount;i.status='paid';i.paid=i.amount;}}}
+    else{const orig=window.findPayById(p.id);if(orig){_onceki=orig.paid||0;orig.status='paid';orig.paid=toTRY(orig.amount,orig.currency||'TRY',window.rates);_tam=orig.paid;}}
+    // Kismi odenmis kalem tamamlaniyorsa mevcut defter kaydini tamamla (ikinci kayit acma).
+    const _pi=_onceki>0?_findPaidIdx(p):-1;
+    let _paidId;
+    if(_pi>=0){const ex=window.paidItems[_pi];_paidId=ex.paidId;window.Store.mutateItem(ex,{status:'paid',paid:_tam});}
+    else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:'paid', paid:toTRY(p.amount,p.currency||'TRY',window.rates), paidAt:new Date().toISOString()});}
+    // Hareket logu: kaleme bu islemle eklenen tutar (kisi kartinda duzenlenebilir)
+    try{
+      if(window.Hareket) window.Hareket.planOdemesiLogla(p, _tam-_onceki, _paidId, false);
+      else window.addLog('paid','Ödeme yapıldı',(p.name||'')+' · ₺'+Number(toTRY(p.amount,p.currency||'TRY',window.rates)).toLocaleString('tr-TR',{maximumFractionDigits:0}),1,{groupId:p.groupId, personId:p.personId});
+    }catch(e){}
   });
   window.Store.touch(); window.closeDV();
 }
@@ -71,6 +80,7 @@ function undoCell(keyEnc,month) {
     else{const orig=window.findPayById(p.id);if(orig){orig.status='pending';orig.paid=0;}}
     const pidx=_findPaidIdx(p);
     if(pidx>=0) window.Store.spliceAt('paidItems', pidx, 1);
+    if(window.Hareket) window.Hareket.kalemHareketleriniKapat(p);
     try{window.addLog('plan_undo','Ödeme geri alındı',(p.name||'')+' · ₺'+Number(toTRY(p.amount,p.currency||'TRY',window.rates)).toLocaleString('tr-TR',{maximumFractionDigits:0}),1,{groupId:p.groupId, personId:p.personId});}catch(e){}
   });
   window.Store.touch(); window.closeDV();
@@ -83,11 +93,14 @@ function doPartial() {
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
   items.forEach(p=>{
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.paid=(i.paid||0)+amt;i.status=i.paid>=i.amount?'paid':'partial';}}}
-    else{const orig=window.findPayById(p.id);if(orig){orig.paid=(orig.paid||0)+amt;orig.status=orig.paid>=toTRY(orig.amount,orig.currency||'TRY',window.rates)?'paid':'partial';}}
+    let _yeniStatus='partial';
+    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.paid=(i.paid||0)+amt;i.status=i.paid>=i.amount?'paid':'partial';_yeniStatus=i.status;}}}
+    else{const orig=window.findPayById(p.id);if(orig){orig.paid=(orig.paid||0)+amt;orig.status=orig.paid>=toTRY(orig.amount,orig.currency||'TRY',window.rates)?'paid':'partial';_yeniStatus=orig.status;}}
     const _pi=_findPaidIdx(p); const existing=_pi>=0?window.paidItems[_pi]:null;
-    if(existing){existing.paid=(existing.paid||0)+amt;existing.status=existing.paid>=toTRY(p.amount,p.currency||'TRY',window.rates)?'paid':'partial';}
-    else{window.Store.push('paidItems', {...p, paidId:'pi_'+Date.now()+'_'+Math.random(), status:'partial', paid:amt, paidAt:new Date().toISOString()});}
+    let _paidId;
+    if(existing){_paidId=existing.paidId;existing.paid=(existing.paid||0)+amt;existing.status=existing.paid>=toTRY(p.amount,p.currency||'TRY',window.rates)?'paid':'partial';}
+    else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:'partial', paid:amt, paidAt:new Date().toISOString()});}
+    try{if(window.Hareket) window.Hareket.planOdemesiLogla(p, amt, _paidId, _yeniStatus!=='paid');}catch(e){}
   });
   window.Store.touch(); window.closeMov('KM');
 }
@@ -114,6 +127,7 @@ function resetPartial(keyEnc,month) {
     else{const orig=window.findPayById(p.id);if(orig){orig.status='pending';orig.paid=0;}}
     const pidx=_findPaidIdx(p);
     if(pidx>=0) window.Store.spliceAt('paidItems', pidx, 1);
+    if(window.Hareket) window.Hareket.kalemHareketleriniKapat(p);
   });
   window.Store.touch(); window.closeDV();
 }

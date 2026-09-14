@@ -206,9 +206,35 @@ function openPersonHist(personId) {
       : '')
     + (s.gecikmis > 0 ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr);font-size:12px;color:var(--danger);font-weight:600">⚠ Gecikmiş: '+window.fmt(s.gecikmis)+' ('+s.gecikmisCount+' ödeme)</div>' : '')
     + '</div>';
+  // ── HAREKETLER (düzenlenebilir ödemeler, hareket.js) ──
+  // Dokununca yalnız o hareket değişir: tutar eski kalemden düşülür, seçilen kaleme eklenir.
+  const pidJs = window.esc(personId).replace(/'/g, '&#39;');
+  const hareketler = window.Hareket ? window.Hareket.kisiHareketleri(personId) : [];
+  const hrkHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 6px">'
+    + '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">Hareketler ('+hareketler.length+')</div>'
+    + '<button onclick="openHareket(\''+pidJs+'\')" class="add-btn" style="font-size:12px;padding:5px 10px">+ Ödeme Gir</button>'
+    + '</div>'
+    + (hareketler.length ? hareketler.map(e => {
+        const h = e.hareket;
+        const iptal = !!h.iptal;
+        const eidJs = window.esc(String(e.id));
+        return '<div '+(iptal?'':'onclick="openHareket(\''+pidJs+'\',\''+eidJs+'\')" ')+'style="display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid var(--bdr);'+(iptal?'opacity:.45':'cursor:pointer')+'">'
+          + '<div style="flex:1;min-width:0">'
+          +   '<div style="font-size:12px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(iptal?';text-decoration:line-through':'')+'">'+window.esc(e.detail||'')+'</div>'
+          +   '<div style="font-size:10px;color:var(--muted);margin-top:2px">'+window.esc(window.fmtD(h.tarih))
+          +     (iptal ? ' · geri alındı' : (h.duzenlendi ? ' · düzenlendi' : ''))+'</div>'
+          + '</div>'
+          + '<div style="font-family:\'IBM Plex Mono\',monospace;font-weight:700;font-size:13px;color:'+(iptal?'var(--muted)':'var(--ok)')+';white-space:nowrap">'+window.fmt(h.tutar)+'</div>'
+          + (iptal ? '' : '<div style="font-size:14px;color:var(--muted)">›</div>')
+          + '</div>';
+      }).join('')
+      : '<div style="font-size:12px;color:var(--muted);padding:8px 0 12px">Henüz hareket yok. Bundan sonraki ödemeler burada görünür ve dokunarak düzenlenir.</div>');
+
+  // ── ESKİ KAYITLAR (salt-okunur metin loglar) ──
   // v8.167: personId-siz eski/cred entry'lerini de yakala — _buildPersonSummary taban-isim mantığıyla tutarlı
   const baseName = window.Hesap._baseOf(person.name);
   const entries = (window.actLog||[]).filter(e => {
+    if (e.hareket) return false;
     if ((e.type||'').startsWith('rhb_')) return false;
     if (e.personId === personId) return true;
     if (!e.personId && e.detail) {
@@ -217,10 +243,9 @@ function openPersonHist(personId) {
     return false;
   });
   const list = document.getElementById('PHIST_LIST');
-  if (!entries.length) {
-    list.innerHTML = summaryHTML + '<div class="empty"><div class="ico">📋</div><p>Bu kişiye ait kayıt yok.</p></div>';
-  } else {
-    list.innerHTML = summaryHTML + entries.map(e => {
+  const eskiHTML = !entries.length ? '' :
+    '<details style="margin-top:12px"><summary style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Eski kayıtlar ('+entries.length+') — salt okunur</summary>'
+    + entries.map(e => {
       const time = e.at ? window.fmtLogTime(e.at) : '';
       const title = window.esc(e.title || '');
       const detail = e.detail ? window.esc(e.detail) : '';
@@ -231,8 +256,9 @@ function openPersonHist(personId) {
         +   (detail ? '<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+detail+'</div>' : '')
         + '</div>'
         + '</div>';
-    }).join('');
-  }
+    }).join('')
+    + '</details>';
+  list.innerHTML = summaryHTML + hrkHTML + eskiHTML;
   ModalManager.open('PHIST');
 }
 
@@ -288,3 +314,4 @@ window.clrHist            = clrHist;
 window.editHistItem       = editHistItem;
 window.restoreFromHist    = restoreFromHist;
 window.delHist            = delHist;
+window.openPersonHist     = openPersonHist;   // hareket.js kaydettikten sonra karti yeniler

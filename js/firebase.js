@@ -90,12 +90,6 @@ onAuthStateChanged(_auth, (user) => {
 window._planDoc      = _planDoc;
 window._metaDoc      = _metaDoc;
 
-// Gunluk brifing (meta/brifing) — Action yazar, app login sonrasi okur. Salt-okuma.
-window._fbGetBrifing = async function() {
-  const snap = await getDoc(doc(_db, 'meta', 'brifing'));
-  return snap.exists() ? snap.data() : null;
-};
-
 // Google ile giriş — popup kullan
 window.doGoogleLogin = async function() {
   try {
