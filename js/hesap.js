@@ -80,7 +80,8 @@ function _displayNames(mx, keys) {
   allKeys.forEach(k => { dnMap[k] = mx[k]._name || k; });
 
   // (2) Kredi satirlari "(Kredi)" tasir
-  allKeys.forEach(k => { if (k.startsWith('cred_')) dnMap[k] = dnMap[k] + ' (Kredi)'; });
+  // v8.231: cari karttan aciklama verilmis kredi kendi adiyla gorunur ("ALI (Araç)"), yoksa "(Kredi)"
+  allKeys.forEach(k => { if (k.startsWith('cred_')) dnMap[k] = dnMap[k] + ' (' + (meta[k].tag || 'Kredi') + ')'; });
 
   // (3) TEK BENZERSIZLIK KAPISI — kademeli, her kademe sonrasi yeniden gruplanir
   const cakisanlar = () => {

@@ -7,7 +7,8 @@ import { todayMidnight, toTRY, maxAheadMonths, araNormalize } from './util.js';
 // ── DATA / HESAPLAMA ─────────────────────────
 function getAllItems() {
   const credPays = [];
-  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx})));
+  // v8.231: kredi aciklamasi (cari kart) plan satirinda ayirt edici etiket olur ("ALI (Araç)")
+  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx, ...(c.desc?{desc:c.desc}:{})})));
   return [...window.pays, ...credPays];
 }
 

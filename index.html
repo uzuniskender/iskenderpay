@@ -72,6 +72,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/rehber.js';
     import './js/log.js';
     import './js/hareket.js';
+    import './js/cari.js';
     import './js/altin-onizleme.js';
     import './js/search.js';
   </script>
@@ -528,8 +529,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1268';
-var APP_BUILD   = '20260914-97d8606';
+var APP_VERSION = 'v8.1274';
+var APP_BUILD   = '20260914-067c07c';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -700,9 +701,88 @@ document.addEventListener('DOMContentLoaded',()=>{
 <div class="mov" id="PHIST">
   <div class="modal">
     <div class="mhdl"></div>
-    <h2 id="PHIST_T">Kişi <span>Geçmişi</span></h2>
-    <div id="PHIST_LIST" style="max-height:60vh;overflow-y:auto;padding-right:4px;margin-bottom:10px"></div>
+    <h2 id="PHIST_T">Kişi <span>Cari Kart</span></h2>
+    <div id="PHIST_LIST" style="padding-right:2px;margin-bottom:10px"></div>
     <div class="brow"><button class="btn bc" data-modal-close="PHIST">Kapat</button></div>
+  </div>
+</div>
+
+<!-- CARİ KART: AY / TAKSİT DÜZENLE -->
+<div class="mov" id="CARI_AY">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2 id="CA_T">Ay <span>Düzenle</span></h2>
+    <input type="hidden" id="CA_REF">
+    <div id="CA_INFO" style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.4"></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Tutar (<span id="CA_CUR">₺</span>)</label><input class="fi mono-inp" id="CA_AMT" type="number" min="0" step="0.01" inputmode="decimal" style="font-size:18px;text-align:center"></div>
+      <div class="fg" id="CA_DATE_WRAP"><label class="fl">Tarih (yalnız bu ay)</label><input class="fi" id="CA_DATE" type="date"></div>
+    </div>
+    <div id="CA_DATE_NOTE" style="font-size:11px;color:var(--muted);margin:0 2px 10px">Kredi taksit tarihleri kredi planından gelir; değiştirmek için "Yapılandır".</div>
+    <div class="brow" style="flex-wrap:wrap">
+      <button class="btn bc" data-modal-close="CARI_AY">İptal</button>
+      <button class="btn" id="CA_DEL" onclick="silCariAy()" style="background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)">Bu Ayı Sil</button>
+      <button class="btn" id="CA_ODE" onclick="odeCariAy()" style="background:rgba(74,222,128,.15);color:var(--ok);border:1px solid rgba(74,222,128,.3)">💰 Öde</button>
+      <button class="btn bs" onclick="saveCariAy()">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<!-- CARİ KART: BORÇ / KREDİ DÜZENLE -->
+<div class="mov" id="CARI_GRP">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2 id="CG_T">Borç <span>Düzenle</span></h2>
+    <input type="hidden" id="CG_KEY">
+    <div class="fg"><label class="fl">Açıklama (sekme ve plan satırı adı)</label><input class="fi" id="CG_DESC" type="text" placeholder="ör: Kira, Araç kredisi"></div>
+    <div class="fg" id="CG_CAT_WRAP"><label class="fl">Kategori</label>
+      <select class="fi" id="CG_CAT"><option>Fatura</option><option>Kira</option><option>Abonelik</option><option>Sigorta</option><option>Kredi</option><option>Diğer</option></select>
+    </div>
+    <div class="fg"><label class="fl">Bekleyenlerin Aylık Tutarı</label><input class="fi mono-inp" id="CG_AMT" type="number" min="0" step="0.01" inputmode="decimal"></div>
+    <div id="CG_INFO" style="font-size:11px;color:var(--muted);margin:0 2px 10px;line-height:1.4"></div>
+    <div class="brow"><button class="btn bc" data-modal-close="CARI_GRP">İptal</button><button class="btn bs" onclick="saveCariGrp()">Kaydet</button></div>
+  </div>
+</div>
+
+<!-- CARİ KART: AY EKLE -->
+<div class="mov" id="CARI_EK">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2>Ay <span>Ekle</span></h2>
+    <input type="hidden" id="CE_KEY">
+    <div class="frow">
+      <div class="fg"><label class="fl">Kaç Ay</label><input class="fi mono-inp" id="CE_N" type="number" min="1" max="120" inputmode="numeric"></div>
+      <div class="fg"><label class="fl">Aylık Tutar</label><input class="fi mono-inp" id="CE_AMT" type="number" min="0" step="0.01" inputmode="decimal"></div>
+    </div>
+    <div id="CE_INFO" style="font-size:11px;color:var(--muted);margin:0 2px 10px"></div>
+    <div class="brow"><button class="btn bc" data-modal-close="CARI_EK">İptal</button><button class="btn bs" onclick="saveCariEk()">Ekle</button></div>
+  </div>
+</div>
+
+<!-- CARİ KART: YENİ BORÇ / KREDİ -->
+<div class="mov" id="CARI_YENI">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2>Yeni <span>Borç / Kredi</span></h2>
+    <div class="fg"><label class="fl">Tür</label>
+      <select class="fi" id="CY_TIP" onchange="cyGuncelle()"><option value="odeme">📅 Düzenli ödeme (kira, fatura, borç…)</option><option value="kredi">💳 Kredi (taksitli)</option></select>
+    </div>
+    <div class="fg"><label class="fl">Açıklama</label><input class="fi" id="CY_DESC" type="text" oninput="cyGuncelle()"></div>
+    <div class="frow">
+      <div class="fg"><label class="fl" id="CY_AMT_LBL">Aylık Tutar</label><input class="fi mono-inp" id="CY_AMT" type="number" min="0" step="0.01" inputmode="decimal" oninput="cyGuncelle()"></div>
+      <div class="fg" id="CY_CUR_WRAP"><label class="fl">Para Birimi</label>
+        <select class="fi" id="CY_CUR" onchange="cyGuncelle()"><option value="TRY">₺ TRY</option><option value="EUR">€ EUR</option><option value="GOLD">Altın gr</option></select>
+      </div>
+    </div>
+    <div class="frow">
+      <div class="fg"><label class="fl">İlk Tarih</label><input class="fi" id="CY_START" type="date" oninput="cyGuncelle()"></div>
+      <div class="fg"><label class="fl" id="CY_N_LBL">Kaç Ay</label><input class="fi mono-inp" id="CY_N" type="number" min="1" max="360" inputmode="numeric" oninput="cyGuncelle()"></div>
+    </div>
+    <div class="fg" id="CY_CAT_WRAP"><label class="fl">Kategori</label>
+      <select class="fi" id="CY_CAT"><option>Fatura</option><option>Kira</option><option>Abonelik</option><option>Sigorta</option><option>Kredi</option><option>Diğer</option></select>
+    </div>
+    <div id="CY_PREV" style="font-size:12px;color:var(--acc);margin:0 2px 10px;line-height:1.4"></div>
+    <div class="brow"><button class="btn bc" data-modal-close="CARI_YENI">İptal</button><button class="btn bs" onclick="saveCariYeni()">Oluştur</button></div>
   </div>
 </div>
 

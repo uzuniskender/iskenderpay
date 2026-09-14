@@ -369,3 +369,29 @@ body.plan-fs-on #PLANWRAP::before {
   position: fixed; top: 15px; left: 16px; z-index: 1002;
   font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 700; color: var(--acc);
 }
+
+/* v8.231: CARİ KART (js/cari.js) */
+#PRM,#YPM,#KCM,#HRKMOD,#CARI_AY,#CARI_GRP,#CARI_EK,#CARI_YENI{z-index:410}
+.cari-kisi{display:flex;gap:10px;align-items:flex-start;margin-bottom:10px}
+.cari-bilgi{display:inline-block;margin:4px 6px 0 0;padding:4px 9px;border-radius:8px;background:var(--surf2);border:1px solid var(--bdr);color:var(--txt);font-size:12px;text-decoration:none;cursor:pointer;font-family:'IBM Plex Mono',monospace;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cari-btn{background:var(--surf2);border:1px solid var(--bdr);color:var(--txt);border-radius:9px;padding:9px 12px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.cari-btn.ok{background:rgba(74,222,128,.15);border-color:rgba(74,222,128,.35);color:var(--ok)}
+.cari-btn.sil{background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.3);color:var(--danger)}
+.cari-btn.kucuk{padding:6px 10px;font-size:12px}
+.cari-ozet{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px;background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;margin-bottom:10px}
+.cari-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.cari-val{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:15px}
+.cari-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--bdr);scrollbar-width:none}
+.cari-tab{flex-shrink:0;display:flex;flex-direction:column;align-items:flex-start;gap:2px;background:var(--surf2);border:1px solid var(--bdr);color:var(--txt);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.cari-tab span{font-size:11px;color:var(--muted);font-family:'IBM Plex Mono',monospace}
+.cari-tab.on{background:rgba(192,132,252,.18);border-color:rgba(192,132,252,.5);color:var(--acc2)}
+.cari-tab.cari-yeni{justify-content:center;border-style:dashed;color:var(--acc)}
+.cari-bilgi-satir{font-size:12px;color:var(--muted);margin:2px 0 8px;line-height:1.5}
+.cari-aksiyon{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.cari-ay,.cari-hrk{display:flex;gap:10px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--bdr);cursor:pointer}
+.cari-ay:active,.cari-hrk:active{background:rgba(255,255,255,.04)}
+.cari-hrk.iptal{opacity:.45;cursor:default}
+.cari-hrk.iptal .cari-hrk-t{text-decoration:line-through}
+.cari-hrk-t{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cari-tutar{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:13px;white-space:nowrap}
+.cari-alt-baslik{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:14px 0 4px}

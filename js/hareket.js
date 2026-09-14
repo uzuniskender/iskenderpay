@@ -115,7 +115,7 @@ function _kisiIdBul(name, personId) {
 function _etiket(h) {
   const o = h.obj;
   const ay = o.date ? window.parseLocalDate(o.date).toLocaleDateString('tr-TR', { month: 'short', year: 'numeric' }) : '';
-  if (h.cred) return h.cred.name + ' (Kredi ' + o.idx + '/' + (h.cred.pays || []).length + ') · ' + ay;
+  if (h.cred) return h.cred.name + ' (' + (h.cred.desc || 'Kredi') + ' ' + o.idx + '/' + (h.cred.pays || []).length + ') · ' + ay;
   const tag = o.desc || o.category;
   return (o.name || '') + (tag ? ' (' + tag + ')' : '') + ' · ' + ay;
 }
@@ -144,7 +144,7 @@ function _detay(ref, tutar) {
 function _ctx(ref, extra) {
   const h = hedefBul(ref, window.pays, window.creds);
   const name = h ? (h.cred ? h.cred.name : h.obj.name) : '';
-  const ctx = { personId: _kisiIdBul(name, h && !h.cred ? h.obj.personId : null) };
+  const ctx = { personId: _kisiIdBul(name, h ? (h.cred ? h.cred.personId : h.obj.personId) : null) };
   if (h && h.cred) ctx.credId = h.cred.id; else if (h) ctx.groupId = h.obj.groupId;
   return Object.assign(ctx, extra || {});
 }
@@ -173,20 +173,30 @@ export function kalemHareketleriniKapat(item) {
 
 // ── UI: KİŞİ KARTI İÇİN ────────────────────────────────────────────────────
 
+// Kayıt bu kişiye mi ait? personId varsa O KESİN; yoksa (eski kayıt) taban-isim eşleşmesi.
+const _baseDef = n => (n || '').replace(/ \d+$/, '').trim() || n;
+export function payKisiye(p, person, baseOf) {
+  baseOf = baseOf || _baseDef;
+  if (!p || !person) return false;
+  return p.personId ? p.personId === person.id : baseOf(p.name) === baseOf(person.name);
+}
+export function credKisiye(c, person, baseOf) {
+  baseOf = baseOf || _baseDef;
+  if (!c || !person) return false;
+  return c.personId ? c.personId === person.id : baseOf(c.name) === baseOf(person.name);
+}
+
 // Kişinin kalemleri (normal ödemeler + kredi taksitleri), tarihe göre.
 function _kisiKalemleri(personId) {
   const person = (window.persons || []).find(p => p.id === personId);
   if (!person) return [];
   const baseOf = window.Hesap._baseOf;
-  const base = baseOf(person.name);
   const out = [];
   (window.pays || []).forEach(p => {
-    if ((personId && p.personId === personId) || (!p.personId && baseOf(p.name) === base)) {
-      out.push({ ref: { k: 'pay', id: p.id }, h: { obj: p, cred: null } });
-    }
+    if (payKisiye(p, person, baseOf)) out.push({ ref: { k: 'pay', id: p.id }, h: { obj: p, cred: null } });
   });
   (window.creds || []).forEach(c => {
-    if (baseOf(c.name) !== base) return;
+    if (!credKisiye(c, person, baseOf)) return;
     (c.pays || []).forEach(t => out.push({ ref: { k: 'cred', cid: c.id, ii: t.idx }, h: { obj: t, cred: c } }));
   });
   return out.sort((a, b) => String(a.h.obj.date).localeCompare(String(b.h.obj.date)));
@@ -224,7 +234,7 @@ function _kalanOf() {
 }
 
 // Yeni ödeme (entryId boş) veya mevcut hareketi düzenle
-function openHareket(personId, entryId) {
+function openHareket(personId, entryId, onSecim) {
   const e = entryId ? (window.actLog || []).find(x => String(x.id) === String(entryId)) : null;
   if (entryId && !e) { alert('Hareket bulunamadı.'); return; }
   if (e) {
@@ -239,7 +249,8 @@ function openHareket(personId, entryId) {
   pSel.innerHTML = [...(window.persons || [])].filter(p => p.id)
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
     .map(p => '<option value="' + window.esc(p.id) + '"' + (p.id === personId ? ' selected' : '') + '>' + window.esc(p.name) + '</option>').join('');
-  _kalemSecenekleri(personId, e ? e.hareket.ref : null, e ? e.hareket.tutar : 0);
+  // onSecim: cari karttan "Öde" -> o ayın kalemi seçili gelir (refKey)
+  _kalemSecenekleri(personId, e ? e.hareket.ref : refParse(onSecim), e ? e.hareket.tutar : 0);
   document.getElementById('HRK_AMT').value = e ? Math.round(e.hareket.tutar * 100) / 100 : Math.round(_kalanOf());
   document.getElementById('HRK_DATE').value = e ? e.hareket.tarih : new Date().toISOString().slice(0, 10);
   document.getElementById('HRK_INFO').textContent = e ? 'Değiştirince yalnız bu tutar eski kalemden düşülür, seçtiğin kaleme eklenir. Başka kayıt değişmez.' : '';
@@ -319,7 +330,7 @@ function _yenile(personId) {
   if (window.curTab === 7 && window.renderActLog) window.renderActLog();
 }
 
-window.Hareket = { planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir };
+window.Hareket = { planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir, payKisiye, credKisiye, refKey, refEsit, tamTutar, durumHesapla };
 window.openHareket    = openHareket;
 window.hrkKisiDegisti = hrkKisiDegisti;
 // Yeni ödemede kalem değişince tutar = kalan önerilir; düzenlemede girilen tutar korunur (taşıma).

@@ -137,6 +137,7 @@ function saveCred() {
       const nameChanged=cr.name!==name;
       const structureChanged=cr.inst!==inst||cr.start!==start;
       cr.name=name; cr.total=total||monthly*inst; cr.monthly=monthly; cr.inst=inst; cr.start=start;
+      if(personId) cr.personId=personId;   // v8.231: kredi-kisi kesin bag (cari kart)
       if(structureChanged){
         // Taksit sayısı veya tarih değişti — yeniden oluştur, mevcut paid durumları koru
         pArr.forEach((newP,i)=>{
@@ -155,6 +156,7 @@ function saveCred() {
   }
   else{
     const newCred={id:'c'+Date.now(),name,total:total||monthly*inst,monthly,inst,start,pays:pArr};
+    if(personId) newCred.personId=personId;   // v8.231: kredi-kisi kesin bag (cari kart)
     window.Store.push('creds', newCred);
     window.addLog('cred_add','Kredi eklendi',name+' · '+inst+' taksit · '+window.fmtAmt(monthly,'TRY'),0,{personId,credId:newCred.id});
     const srcKey=window._convertSourceKey;

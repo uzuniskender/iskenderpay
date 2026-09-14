@@ -31,6 +31,15 @@ async function _doSave() {
     rehber: window.rehber, actLog: window.actLog
   };
   const enc = await Session.encrypt(data);
+  // v8.231 GUVENLIK KOPYASI: bu surumun ILK kaydindan once, cihazdaki mevcut SIFRELI veri
+  // ayri anahtara bir kez kopyalanir (cari kart gecisi oncesi geri donus noktasi). Sifreli kalir.
+  try {
+    const _yk = 'ipay-guvenlik-oncesi-v8.231-' + window.Store.planId;
+    if (!localStorage.getItem(_yk)) {
+      const _eski = localStorage.getItem('v5-data-' + window.Store.planId);
+      if (_eski) localStorage.setItem(_yk, _eski);
+    }
+  } catch(e) { console.warn('[persist] guvenlik kopyasi alinamadi:', e); }
   // localStorage ÖNCE yaz — Firebase başarısız olsa bile veri güvende
   localStorage.setItem('v5-data-' + window.Store.planId, enc);
   localStorage.setItem('v5-rates-' + window.Store.planId, JSON.stringify(window.rates));

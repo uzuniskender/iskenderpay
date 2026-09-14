@@ -19,10 +19,17 @@ function renderPersons() {
     const origIdx = (window.persons||[]).indexOf(p);
     const pid = p.id || '';
     const cursorStyle = pid ? 'cursor:pointer;' : '';
+    // v8.231: listede kisinin bekleyen/gecikmis borcu (cari kart ozetiyle ayni kaynak)
+    let ozetHtml = '';
+    try {
+      const s = _buildPersonSummary(pid, p.name);
+      if (s.bekleyen > 0.5) ozetHtml = `<span style="color:${s.gecikmis>0.5?'var(--danger)':'var(--ora)'};font-family:'IBM Plex Mono',monospace;font-weight:600">${window.fmt(s.bekleyen)}</span> bekleyen${s.gecikmis>0.5?' · ⚠ '+window.fmt(s.gecikmis)+' gecikmiş':''}`;
+    } catch(e) {}
     return `<div data-person-id="${pid}" style="${cursorStyle}background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rs);padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
       <div style="min-width:0;flex:1">
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${window.esc(p.name)}</div>
         ${p.desc?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${window.esc(p.desc)}</div>`:''}
+        ${ozetHtml?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ozetHtml}</div>`:''}
       </div>
       <div style="display:flex;gap:5px;flex-shrink:0">
         <button data-edit-idx="${origIdx}" style="background:rgba(192,132,252,.15);color:var(--acc2);border:1px solid rgba(192,132,252,.2);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer">Düzenle</button>
@@ -43,6 +50,12 @@ function renderPersons() {
     _prlHandlersAttached = true;
   }
 }
+
+// v8.231: Kisiler sekmesi acikken borc degisirse (cari karttan) listedeki ozet tazelenir
+window.addEventListener('store:change', e => {
+  if (window.curTab !== 2) return;
+  if (window.Store && window.Store._affects(e.detail, ['persons','pays','creds'])) renderPersons();
+});
 
 function updateDatalist() {
   const dl = document.getElementById('PNLIST');
@@ -88,6 +101,14 @@ function savePerson() {
         if ((pid && p.personId === pid) || (!p.personId && p.name === oldName))
           window.Store.mutateItem(p, {name});
       });
+      // v8.231: kisinin kredileri + kredi defter kayitlari da yeni adi alir (tek yerden yonetim)
+      (window.creds || []).forEach(c => {
+        if ((pid && c.personId === pid) || (!c.personId && c.name === oldName)) {
+          (window.paidItems || []).forEach(pi => { if (pi._cid === c.id) window.Store.mutateItem(pi, {name}); });
+          window.Store.mutateItem(c, {name});
+        }
+      });
+      if (pid) window.addLog('plan_edit', 'Kişi adı değişti', oldName + ' → ' + name, 2, {personId: pid});
     }
     const newObj = {name, desc};
     if (pid) newObj.id = pid;
@@ -103,6 +124,13 @@ function savePerson() {
 }
 
 function delPerson(i) {
+  // v8.231: borcu/kredisi olan kisi silinemez (kayitlar sahipsiz kalmasin)
+  const pr = window.persons[i];
+  if (pr && pr.id && window.Hareket) {
+    const bagli = (window.pays || []).filter(p => window.Hareket.payKisiye(p, pr, window.Hesap._baseOf)).length
+      + (window.creds || []).filter(c => window.Hareket.credKisiye(c, pr, window.Hesap._baseOf)).length;
+    if (bagli) { alert('"' + pr.name + '" kişisinin plan kayıtları var. Önce cari kartından borçlarını sil.'); return; }
+  }
   if (!confirm('Bu kişiyi silmek istiyor musunuz?')) return;
   window.Store.spliceAt('persons', i, 1);
   renderPersons();
@@ -148,7 +176,8 @@ function _buildPersonSummary(personId, personName) {
   });
   // (2) Kredi taksitleri (cred.pays.amount zaten TRY — toplamOzeti ile tutarlı). Yükümlülük = kredi.
   (window.creds || []).forEach(c => {
-    if (baseOf(c.name) !== baseName) return;
+    // v8.231: kredi personId tasiyorsa KESIN bag; yoksa (eski kredi) taban-isim
+    if (c.personId ? c.personId !== personId : baseOf(c.name) !== baseName) return;
     (c.pays || []).forEach(p => {
       if ((p.status || 'pending') === 'paid') return;
       addPending(kalan(p.amount, p.paid), isOverdue(p), 'cred:' + c.id, c.name + ' (kredi)');
@@ -174,93 +203,8 @@ function _buildPersonSummary(personId, personName) {
   };
 }
 
-function openPersonHist(personId) {
-  if (!personId) { alert('Bu kişinin ID\'si yok'); return; }
-  const person = (window.persons||[]).find(p => p.id === personId);
-  if (!person) return;
-  document.getElementById('PHIST_T').innerHTML = window.esc(person.name) + ' <span>Geçmişi</span>';
-  // v8.164: özet bloğu — başlığın hemen altı, list'in üstü
-  const s = _buildPersonSummary(personId, person.name);
-  const summaryHTML = '<div style="margin-bottom:12px;padding:10px 12px;background:var(--surf2);border-radius:9px;border:1px solid var(--bdr)">'
-    + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'
-    +   '<div>'
-    +     '<div style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px">Bekleyen</div>'
-    +     '<div style="font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:var(--ora);font-size:14px">'+window.fmt(s.bekleyen)+'</div>'
-    +     '<div style="font-size:10px;color:var(--muted)">'+s.bekleyenCount+' ödeme</div>'
-    +   '</div>'
-    +   '<div>'
-    +     '<div style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px">Ödenen</div>'
-    +     '<div style="font-family:\'IBM Plex Mono\',monospace;font-weight:700;color:var(--ok);font-size:14px">'+window.fmt(s.odenmisToplam)+'</div>'
-    +     '<div style="font-size:10px;color:var(--muted)">'+s.odenmisCount+' ödeme</div>'
-    +   '</div>'
-    + '</div>'
-    + (s.breakdown && s.breakdown.length > 1 ?
-        '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)">'
-        + s.breakdown.map(b =>
-            '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0">'
-            + '<span style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+window.esc(b.label)+'</span>'
-            + '<span style="font-family:\'IBM Plex Mono\',monospace;font-weight:600;color:'+(b.gecikmis>0?'var(--danger)':'var(--txt)')+';white-space:nowrap">'+window.fmt(b.bekleyen)+'</span>'
-            + '</div>'
-          ).join('')
-        + '</div>'
-      : '')
-    + (s.gecikmis > 0 ? '<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr);font-size:12px;color:var(--danger);font-weight:600">⚠ Gecikmiş: '+window.fmt(s.gecikmis)+' ('+s.gecikmisCount+' ödeme)</div>' : '')
-    + '</div>';
-  // ── HAREKETLER (düzenlenebilir ödemeler, hareket.js) ──
-  // Dokununca yalnız o hareket değişir: tutar eski kalemden düşülür, seçilen kaleme eklenir.
-  const pidJs = window.esc(personId).replace(/'/g, '&#39;');
-  const hareketler = window.Hareket ? window.Hareket.kisiHareketleri(personId) : [];
-  const hrkHTML = '<div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 6px">'
-    + '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">Hareketler ('+hareketler.length+')</div>'
-    + '<button onclick="openHareket(\''+pidJs+'\')" class="add-btn" style="font-size:12px;padding:5px 10px">+ Ödeme Gir</button>'
-    + '</div>'
-    + (hareketler.length ? hareketler.map(e => {
-        const h = e.hareket;
-        const iptal = !!h.iptal;
-        const eidJs = window.esc(String(e.id));
-        return '<div '+(iptal?'':'onclick="openHareket(\''+pidJs+'\',\''+eidJs+'\')" ')+'style="display:flex;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid var(--bdr);'+(iptal?'opacity:.45':'cursor:pointer')+'">'
-          + '<div style="flex:1;min-width:0">'
-          +   '<div style="font-size:12px;font-weight:600;color:#e2e8f0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'+(iptal?';text-decoration:line-through':'')+'">'+window.esc(e.detail||'')+'</div>'
-          +   '<div style="font-size:10px;color:var(--muted);margin-top:2px">'+window.esc(window.fmtD(h.tarih))
-          +     (iptal ? ' · geri alındı' : (h.duzenlendi ? ' · düzenlendi' : ''))+'</div>'
-          + '</div>'
-          + '<div style="font-family:\'IBM Plex Mono\',monospace;font-weight:700;font-size:13px;color:'+(iptal?'var(--muted)':'var(--ok)')+';white-space:nowrap">'+window.fmt(h.tutar)+'</div>'
-          + (iptal ? '' : '<div style="font-size:14px;color:var(--muted)">›</div>')
-          + '</div>';
-      }).join('')
-      : '<div style="font-size:12px;color:var(--muted);padding:8px 0 12px">Henüz hareket yok. Bundan sonraki ödemeler burada görünür ve dokunarak düzenlenir.</div>');
-
-  // ── ESKİ KAYITLAR (salt-okunur metin loglar) ──
-  // v8.167: personId-siz eski/cred entry'lerini de yakala — _buildPersonSummary taban-isim mantığıyla tutarlı
-  const baseName = window.Hesap._baseOf(person.name);
-  const entries = (window.actLog||[]).filter(e => {
-    if (e.hareket) return false;
-    if ((e.type||'').startsWith('rhb_')) return false;
-    if (e.personId === personId) return true;
-    if (!e.personId && e.detail) {
-      return window.Hesap._baseOf((e.detail.split(' · ')[0]) || '') === baseName;
-    }
-    return false;
-  });
-  const list = document.getElementById('PHIST_LIST');
-  const eskiHTML = !entries.length ? '' :
-    '<details style="margin-top:12px"><summary style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;cursor:pointer">Eski kayıtlar ('+entries.length+') — salt okunur</summary>'
-    + entries.map(e => {
-      const time = e.at ? window.fmtLogTime(e.at) : '';
-      const title = window.esc(e.title || '');
-      const detail = e.detail ? window.esc(e.detail) : '';
-      return '<div style="display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--bdr)">'
-        + '<div style="font-size:11px;color:var(--muted);min-width:75px;flex-shrink:0">'+time+'</div>'
-        + '<div style="flex:1;min-width:0">'
-        +   '<div style="font-size:12px;font-weight:600;color:#e2e8f0">'+title+'</div>'
-        +   (detail ? '<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+detail+'</div>' : '')
-        + '</div>'
-        + '</div>';
-    }).join('')
-    + '</details>';
-  list.innerHTML = summaryHTML + hrkHTML + eskiHTML;
-  ModalManager.open('PHIST');
-}
+// v8.231: kisi karti = CARI KART (js/cari.js). Eski gecmis modal govdesi oraya tasindi.
+function openPersonHist(personId) { window.openCari(personId); }
 
 function editHistItem(idx) {
   const p=window.hist[idx];if(!p)return;
@@ -314,4 +258,5 @@ window.clrHist            = clrHist;
 window.editHistItem       = editHistItem;
 window.restoreFromHist    = restoreFromHist;
 window.delHist            = delHist;
-window.openPersonHist     = openPersonHist;   // hareket.js kaydettikten sonra karti yeniler
+window.openPersonHist     = openPersonHist;   // log.js logJumpPerson / hareket.js -> cari kart
+window.editPerson         = editPerson;       // cari kart "✏️ Kişi"
