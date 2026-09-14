@@ -73,6 +73,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/log.js';
     import './js/hareket.js';
     import './js/cari.js';
+    import './js/mobil.js';
     import './js/altin-onizleme.js';
     import './js/search.js';
   </script>
@@ -167,6 +168,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
     <!-- ÖZET -->
     <div id="T0">
+      <div id="MOB_HOME"></div>
       <div class="ph">
         <div><h1>Ödeme <span>Özeti</span></h1><div style="font-size:11px;color:var(--muted);margin-top:2px" id="OHS"></div></div>
         <div class="dbadge" id="OD"></div>
@@ -529,8 +531,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1274';
-var APP_BUILD   = '20260914-067c07c';
+var APP_VERSION = 'v8.1278';
+var APP_BUILD   = '20260914-f95c530';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -807,12 +809,58 @@ document.addEventListener('DOMContentLoaded',()=>{
   </div>
 </div>
 
+<!-- MOBİL ALT MENÜ (yalnız telefonda görünür, app.css @media) -->
+<nav class="altbar" id="ALTBAR" aria-label="Ana menü">
+  <button data-tab="0" onclick="mobilIslem('git0')" class="on"><span>🏠</span>Ana Sayfa</button>
+  <button data-tab="2" onclick="mobilIslem('git2')"><span>👥</span>Kişiler</button>
+  <button class="altbar-arti" data-mh="hizli" aria-label="Yeni işlem"><span>＋</span></button>
+  <button data-tab="7" onclick="mobilIslem('git7')"><span>📋</span>Hareket</button>
+  <button data-mh="diger"><span>☰</span>Diğer</button>
+</nav>
+
+<div class="mov" id="MOB_HIZLI">
+  <div class="modal mob-sayfa">
+    <div class="mhdl"></div>
+    <h2>Ne <span>yapmak istiyorsun?</span></h2>
+    <div class="mob-menu">
+      <button data-mh="ode"><span>💰</span><b>Ödeme Gir</b><small>Bir kişinin borcuna ödeme yaz</small></button>
+      <button data-mh="yeni"><span>📄</span><b>Yeni Borç / Kredi</b><small>Kişi seç, taksit veya aylık ödeme oluştur</small></button>
+      <button data-mh="kisi_ekle"><span>👤</span><b>Kişi Ekle</b><small>Yeni cari kart aç</small></button>
+      <button data-mh="tek"><span>🧾</span><b>Plana Kayıt</b><small>Klasik ödeme ekleme ekranı</small></button>
+    </div>
+  </div>
+</div>
+
+<div class="mov" id="MOB_KISI">
+  <div class="modal mob-sayfa">
+    <div class="mhdl"></div>
+    <h2>Kime <span>borç eklenecek?</span></h2>
+    <div class="mh-liste" id="MOB_KISI_LISTE"></div>
+  </div>
+</div>
+
+<div class="mov" id="MOB_DIGER">
+  <div class="modal mob-sayfa">
+    <div class="mhdl"></div>
+    <h2>Diğer</h2>
+    <div class="mob-menu">
+      <button data-mh="ara"><span>🔍</span><b>Ara</b><small>Kişi, tutar, kayıt</small></button>
+      <button data-mh="tablo"><span>📊</span><b>Aylık Tablo</b><small>Tüm ödemeler ay ay</small></button>
+      <button data-mh="git3"><span>📝</span><b>Notlar</b><small>Şifreli notlar</small></button>
+      <button data-mh="git6"><span>📒</span><b>Rehber</b><small>Telefon, IBAN</small></button>
+      <button data-mh="git5"><span>⚙️</span><b>Ayarlar</b><small>Şifre, kur, yedek, güncelleme</small></button>
+      <button onclick="ModalManager.closeAll();switchPlan()"><span>🔄</span><b>Plan Değiştir</b><small>Diğer ödeme planı</small></button>
+      <button onclick="ModalManager.closeAll();doGoogleSignOut()" class="tehlike"><span>🚪</span><b>Çıkış</b><small>Hesaptan çık</small></button>
+    </div>
+  </div>
+</div>
+
 <div id="sync-toast">🔄 Senkronize edildi</div>
 <div id="warn-toast"></div>
 <div id="upd-banner">
   <div class="upd-txt">🔄 Yeni sürüm mevcut</div>
   <button class="upd-btn" onclick="updApply()">Güncelle</button>
 </div>
-<button onclick="window.ModalManager.open('SRCHMOD'); setTimeout(()=>document.getElementById('SRCHINP').focus(),100);" style="position:fixed;bottom:20px;right:20px;z-index:9990;background:#ffd200;color:#0f0e17;border:none;padding:12px 18px;font-weight:700;font-size:14px;border-radius:50px;box-shadow:0 4px 20px rgba(0,0,0,.5);cursor:pointer;display:flex;align-items:center;gap:8px;">🔍 Ara</button>
+<button id="ARA_FAB" onclick="window.ModalManager.open('SRCHMOD'); setTimeout(()=>document.getElementById('SRCHINP').focus(),100);" style="position:fixed;bottom:20px;right:20px;z-index:9990;background:#ffd200;color:#0f0e17;border:none;padding:12px 18px;font-weight:700;font-size:14px;border-radius:50px;box-shadow:0 4px 20px rgba(0,0,0,.5);cursor:pointer;display:flex;align-items:center;gap:8px;">🔍 Ara</button>
 </body>
 </html>

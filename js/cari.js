@@ -526,3 +526,4 @@ window.saveCariGrp  = saveCariGrp;
 window.saveCariEk   = saveCariEk;
 window.saveCariYeni = saveCariYeni;
 window.cyGuncelle   = cyGuncelle;
+window.openCariYeni = openCariYeni;   // mobil + menüsü: kişi seç -> yeni borç

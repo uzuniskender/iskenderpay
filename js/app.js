@@ -140,6 +140,9 @@ function go(n) {
   if (n===5) window.renderAI();
   if (n===6) window.renderRhb();
   if (n===7) window.renderActLog();
+  if (n===0 && window.renderMobil) window.renderMobil();
+  if (n!==0) document.body.classList.remove('mob-tablo');
+  if (window.altbarGuncelle) window.altbarGuncelle(n);
 }
 
 function chSort(v) { window.sortMode = v; render(); }
