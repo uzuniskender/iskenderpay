@@ -237,16 +237,23 @@ function _kalanOf() {
 function openHareket(personId, entryId, onSecim) {
   const e = entryId ? (window.actLog || []).find(x => String(x.id) === String(entryId)) : null;
   if (entryId && !e) { alert('Hareket bulunamadı.'); return; }
+  // Geri alınmış hareket: tek işlem kalır -> kaydı sistemden sil (PIN)
+  if (e && e.hareket && e.hareket.iptal) { _hrkPerson = personId; kaydiSilHareket(String(e.id)); return; }
   if (e) {
     const g = geriAlinabilir(e.hareket, window.pays, window.creds);
-    if (!g.ok) { alert(g.neden); return; }
+    if (!g.ok) {
+      // Kalemi silinmiş / yapılandırılmış: para değiştirilemez ama iz silinebilir
+      if (confirm(g.neden + '\n\nBu kaydı yalnızca logdan silmek ister misin? (Plana dokunulmaz)')) { _hrkPerson = personId; kaydiSilHareket(String(e.id), true); }
+      return;
+    }
   }
   _hrkPerson = personId;
   document.getElementById('HRK_EID').value = entryId || '';
   document.getElementById('HRK_T').innerHTML = e ? 'Hareket <span>Düzenle</span>' : 'Ödeme <span>Gir</span>';
   document.getElementById('HRK_DEL').style.display = e ? '' : 'none';
+  const silBtn = document.getElementById('HRK_SIL'); if (silBtn) silBtn.style.display = e ? '' : 'none';
   const pSel = document.getElementById('HRK_PERSON');
-  pSel.innerHTML = [...(window.persons || [])].filter(p => p.id)
+  pSel.innerHTML = [...(window.persons || [])].filter(p => p.id && (!p.arsiv || p.id === personId))
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
     .map(p => '<option value="' + window.esc(p.id) + '"' + (p.id === personId ? ' selected' : '') + '>' + window.esc(p.name) + '</option>').join('');
   // onSecim: cari karttan "Öde" -> o ayın kalemi seçili gelir (refKey)
@@ -324,6 +331,34 @@ function geriAlHareket() {
   _yenile(_hrkPerson);
 }
 
+// 🗑 KAYDI SİL: iz sistemden gider (PIN). Ödeme hâlâ geçerliyse ÖNCE geri alınır —
+// planda "ödendi" görünüp kaydı olmayan hayalet ödeme bırakılmaz.
+// sadeceIz=true: kalemi zaten yok (silinmiş/yapılandırılmış) -> yalnız log satırı gider.
+async function kaydiSilHareket(eid, sadeceIz) {
+  eid = eid || document.getElementById('HRK_EID').value;
+  const e = (window.actLog || []).find(x => String(x.id) === String(eid));
+  if (!e || !e.hareket) return;
+  const aktif = !e.hareket.iptal && !sadeceIz;
+  let g = null;
+  if (aktif) {
+    g = geriAlinabilir(e.hareket, window.pays, window.creds);
+    if (!g.ok) { alert(g.neden); return; }
+  }
+  const ack = window.esc(e.detail || '') + '<br><br>'
+    + (aktif
+      ? '<b>Bu ödeme hâlâ geçerli.</b> Kayıt silinince ödeme de geri alınır: ' + window.fmt(e.hareket.tutar) + ' kalemden düşülür, ay ödenmemiş görünür.'
+      : 'Kayıt kalıcı olarak silinir. Plana dokunulmaz.')
+    + '<br>Onaylamak için şifreni gir.';
+  const ok = window.pinOnay ? await window.pinOnay('Kaydı <span>Sil</span>', ack) : confirm('Kayıt silinsin mi?');
+  if (!ok) return;
+  window.Store.tx(() => {
+    if (aktif) _uygula(e.hareket.ref, -e.hareket.tutar, null, e.hareket.paidId);
+    window.Store.removeWhere('actLog', x => x === e || String(x.id) === String(e.id));
+  });
+  window.closeMov('HRKMOD');
+  _yenile(_hrkPerson);
+}
+
 function _yenile(personId) {
   const pid = _hrkPerson || personId;
   if (pid && window.openPersonHist) window.openPersonHist(pid);
@@ -339,3 +374,4 @@ window.hrkKalemDegisti = () => {
 };
 window.saveHareket    = saveHareket;
 window.geriAlHareket  = geriAlHareket;
+window.kaydiSilHareket = kaydiSilHareket;

@@ -97,6 +97,8 @@ function savePaidItem() {
 
 function delPaidItem(paidId) {
   const p=window.paidItems.find(x=>x.paidId===paidId);if(!p)return;
+  // v8.233: gecerli odeme hareketine bagli defter kaydi buradan silinmez (plan ile kopar)
+  if((window.actLog||[]).some(e=>e&&e.hareket&&!e.hareket.iptal&&e.hareket.paidId===paidId)){alert('Bu ödeme kişi kartındaki bir hareketle bağlı. Kişinin kartından "Geri Al" veya "Kaydı Sil" kullan.');return;}
   if(!confirm(p.name+' yapılan ödemelerden silinecek. Plan etkilenmez. Emin misin?'))return;
   const idx=window.paidItems.indexOf(p);if(idx!==-1)window.Store.spliceAt('paidItems', idx, 1);
   if(window.curTab===7)window.renderActLog();

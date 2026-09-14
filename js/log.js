@@ -462,58 +462,58 @@ function closeLogDel() {
   _logSelected.clear();_logDelMode='range';renderActLog();
 }
 
+// v8.233 KORUMALI LOG SILME: toplu silme PIN ister ve GECERLI (geri alinmamis) odeme
+// hareketlerine DOKUNMAZ — o kayit silinirse plan "odendi" kalir ama izi kaybolur (hayalet odeme).
+// Onlar kisi kartindan "Geri Al" veya "Kaydi Sil" ile yonetilir.
+const _aktifHrk = e => !!(e && e.hareket && !e.hareket.iptal);
+
+async function _logSilKorumali(sec, baslik) {
+  const aday = window.actLog.map((e,i)=>({e,i})).filter(({e,i}) => sec(e,i));
+  if (!aday.length) { alert('Silinecek kayıt bulunamadı.'); return; }
+  const korunan = aday.filter(({e}) => _aktifHrk(e)).length;
+  const silinecek = aday.length - korunan;
+  if (!silinecek) { alert(korunan+' kaydın hepsi geçerli ödeme hareketi — korunuyor.\n\nBunları kişi kartından "Geri Al" veya "Kaydı Sil" ile yönet.'); return; }
+  const ack = '<b>'+silinecek+'</b> log kaydı kalıcı silinecek.'
+    + (korunan ? '<br>'+korunan+' geçerli ödeme hareketi <b>korunuyor</b> (plana bağlı; kişi kartından yönetilir).' : '')
+    + '<br>Plan ve ödemeler değişmez. Onaylamak için şifreni gir.';
+  const ok = window.pinOnay ? await window.pinOnay(baslik, ack) : confirm(silinecek+' kayıt silinecek. Emin misin?');
+  if (!ok) return;
+  const silSet = new Set(aday.filter(({e}) => !_aktifHrk(e)).map(({i}) => i));
+  window.Store.removeWhere('actLog', (_, i) => silSet.has(i));
+  _logSelected.clear(); renderActLog(); closeLogDel();
+  if (window.showWarnToast) window.showWarnToast(silinecek+' kayıt silindi'+(korunan?' · '+korunan+' ödeme korundu':''));
+}
+
 function doLogDel() {
   const d1=document.getElementById('LOG_D1').value;const d2=document.getElementById('LOG_D2').value;
   if(!d1||!d2){alert('Tarih aralığı seçin');return;}
   const from=new Date(d1).getTime(),to=new Date(d2).getTime();
   if(isNaN(from)||isNaN(to)){alert('Geçersiz tarih');return;}
-  const before=window.actLog.length;
-  window.Store.removeWhere('actLog', e => { const t=new Date(e.at).getTime(); return !(t<from||t>to); });
-  const deleted=before-window.actLog.length;
-  renderActLog();closeLogDel();
-  if(deleted>0)alert(deleted+' kayıt silindi.');else alert('Bu aralıkta kayıt bulunamadı.');
+  _logSilKorumali(e => { const t=new Date(e.at).getTime(); return !(t<from||t>to); }, 'Aralığı <span>Sil</span>');
 }
 
 function doLogDelSelected() {
   if(!_logSelected.size){alert('Önce silinecek kayıtları seçin.');return;}
-  if(!confirm(_logSelected.size+' kayıt silinecek. Emin misin?'))return;
-  window.Store.removeWhere('actLog', (_, i) => _logSelected.has(i));
-  _logSelected.clear();renderActLog();closeLogDel();
+  const sec=new Set(_logSelected);
+  _logSilKorumali((_, i) => sec.has(i), 'Seçilileri <span>Sil</span>');
 }
 
 function doLogDelAll() {
-  if(!confirm('Tüm log silinecek. Emin misin?'))return;
-  window.Store.replace('actLog', []);renderActLog();closeLogDel();
+  _logSilKorumali(() => true, 'Tüm Logu <span>Sil</span>');
 }
 
 function doLogDelByPerson() {
   const sel=document.getElementById('LOG_PERSON_SEL');
   const pid=sel?sel.value:'';
   if(!pid){alert('Kişi seçin');return;}
-  const person=(window.persons||[]).find(p => p.id===pid);
-  const name=person?person.name:'(?)';
-  if(!confirm('"'+name+'" kişisinin tüm log\'ları silinecek. Emin misin?'))return;
-  const before=window.actLog.length;
-  window.Store.removeWhere('actLog', e => e.personId===pid);
-  const deleted=before-window.actLog.length;
-  renderActLog();closeLogDel();
-  if(deleted>0)alert(deleted+' kayıt silindi.');else alert('Bu kişiye ait kayıt bulunamadı.');
+  _logSilKorumali(e => e.personId===pid, 'Kişinin Loglarını <span>Sil</span>');
 }
 
 function doLogDelByGroup() {
   const sel=document.getElementById('LOG_GROUP_SEL');
   const gid=sel?sel.value:'';
   if(!gid){alert('Kayıt grubu seçin');return;}
-  const first=(typeof window.findPaysByGroup==='function')
-    ? window.findPaysByGroup(gid)[0]
-    : (window.pays||[]).find(p => p.groupId===gid);
-  const name=first?first.name:'(?)';
-  if(!confirm('"'+name+'" kayıt grubunun tüm log\'ları silinecek. Emin misin?'))return;
-  const before=window.actLog.length;
-  window.Store.removeWhere('actLog', e => e.groupId===gid);
-  const deleted=before-window.actLog.length;
-  renderActLog();closeLogDel();
-  if(deleted>0)alert(deleted+' kayıt silindi.');else alert('Bu kayıt grubuna ait kayıt bulunamadı.');
+  _logSilKorumali(e => e.groupId===gid, 'Grubun Loglarını <span>Sil</span>');
 }
 
 

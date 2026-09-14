@@ -400,7 +400,7 @@ body.plan-fs-on #PLANWRAP::before {
    v8.232 MOBİL DENEYİM (js/mobil.js) — yalnız telefon. Masaüstü değişmez.
    ============================================================================ */
 #MOB_HOME,.altbar{display:none}
-@media (max-width:767px){
+@media (max-width:767px), (pointer:coarse) and (max-height:540px){
   :root{--alt-h:64px;--gold1:#f2d49b;--gold2:#c9974a}
   html,body{overscroll-behavior-y:none}
   body{-webkit-font-smoothing:antialiased}
@@ -511,4 +511,61 @@ body.plan-fs-on #PLANWRAP::before {
   /* Log filtreleri iki sütun */
   #LOG_FILT_BAR{display:grid;grid-template-columns:1fr 1fr;gap:6px}
   #LOG_FILT_BAR select{margin-top:0!important;font-size:14px!important}
+}
+
+/* ============================================================================
+   v8.233 PENCERE BOYUTU · CARİ AYLAR IZGARASI · ARŞİV · YATAY TELEFON
+   ============================================================================ */
+.modal{position:relative}
+.pen-boyut{position:sticky;top:-18px;float:right;z-index:6;display:flex;gap:2px;margin:-6px -6px 0 8px;padding:3px;border-radius:10px;background:var(--surf2);border:1px solid var(--bdr)}
+.pen-boyut button{width:30px;height:26px;border:0;border-radius:7px;background:none;color:var(--muted);font-size:14px;line-height:1;cursor:pointer}
+.pen-boyut button:hover{color:var(--txt);background:rgba(255,255,255,.06)}
+.pen-boyut button.on{color:var(--acc);background:rgba(232,192,125,.12)}
+.pen-boyut .pen-yatay{display:none}
+.pen-tutamac{position:absolute;right:2px;bottom:2px;width:18px;height:18px;cursor:nwse-resize;opacity:.5;
+  background:linear-gradient(135deg,transparent 50%,var(--muted) 50%,var(--muted) 58%,transparent 58%,transparent 70%,var(--muted) 70%,var(--muted) 78%,transparent 78%)}
+.pen-tutamac:hover{opacity:1}
+@media (pointer:coarse){.pen-tutamac{display:none}.pen-boyut [data-boyut="g"]{display:none}.pen-boyut .pen-yatay{display:block}}
+.mov.pen-g .modal{max-width:min(1100px,96vw)!important;width:96vw}
+.mov.pen-t{align-items:stretch!important;justify-content:stretch!important}
+.mov.pen-t .modal{max-width:none!important;width:100vw!important;height:100dvh!important;max-height:100dvh!important;border-radius:0!important}
+.mov.pen-t .mhdl{display:none}
+
+/* Cari kart: çok taksit -> pencere genişledikçe çok sütun */
+.cari-aylar.cok{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));column-gap:16px}
+.cari-aylar.cok .cari-ay{min-width:0}
+.cari-kisi-btn{display:flex;gap:6px;flex-shrink:0}
+.cari-hrk-sil{font-size:15px;opacity:.9;padding:0 4px}
+.cari-hrk.iptal{cursor:pointer}
+
+/* Kişiler: arşiv */
+.kisi-arsiv{margin-top:14px;border-top:1px solid var(--bdr);padding-top:10px}
+.kisi-arsiv summary{font-size:12px;font-weight:600;color:var(--muted);cursor:pointer;padding:6px 2px}
+.kisi-arsiv-satir{display:flex;align-items:center;gap:8px;padding:9px 12px;margin-top:6px;border:1px dashed var(--bdr);border-radius:12px;opacity:.85}
+.kisi-mini{background:var(--surf2);border:1px solid var(--bdr);color:var(--txt);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.kisi-mini.sil{color:var(--danger)}
+.ks-secim{display:grid;gap:8px}
+.ks-secim button{display:grid;grid-template-columns:44px 1fr;grid-template-rows:auto auto;column-gap:12px;align-items:center;text-align:left;background:var(--surf2);border:1px solid var(--bdr);border-radius:16px;padding:12px 14px;color:var(--txt);cursor:pointer;font-family:'Inter',sans-serif}
+.ks-secim button span{grid-row:1/3;width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:21px;background:var(--surf)}
+.ks-secim button b{font-size:15px}
+.ks-secim button small{font-size:12px;color:var(--muted)}
+.ks-secim button.tehlike b{color:var(--danger)}
+.ks-secim button:disabled{opacity:.45;cursor:not-allowed}
+
+/* YATAY TELEFON: genişlik 768+ olsa da telefon düzeni (masaüstü 560px pencere + yan menü DEĞİL) */
+@media (pointer:coarse) and (max-height:540px){
+  .sidebar{display:none!important}
+  .content{margin-left:0!important;padding-bottom:calc(58px + env(safe-area-inset-bottom) + 8px)}
+  .mnav,#ARA_FAB,#SIRADAKI{display:none!important}
+  .altbar{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:300;height:calc(56px + env(safe-area-inset-bottom));
+    padding:0 calc(10px + env(safe-area-inset-right)) env(safe-area-inset-bottom) calc(10px + env(safe-area-inset-left));background:rgba(20,19,32,.94);backdrop-filter:blur(14px);border-top:1px solid rgba(255,255,255,.08)}
+  .altbar button{background:none;border:0;color:var(--muted);font:600 11px/1 'Inter',sans-serif;display:flex;flex-direction:row;align-items:center;justify-content:center;gap:6px;height:56px}
+  .altbar button span{font-size:18px}
+  .altbar button.on{color:var(--acc)}
+  .altbar .altbar-arti span{width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,#f2d49b,#c9974a);color:#1a1407;font-size:24px}
+  #T0 .ph,#OC,#HAFTA,#T0 .sec{display:none}
+  body.mob-tablo #T0 .sec{display:block}
+  #MOB_HOME{display:block;padding:10px calc(16px + env(safe-area-inset-right)) 4px calc(16px + env(safe-area-inset-left))}
+  .mov{align-items:stretch!important;justify-content:center!important}
+  .modal{max-width:none!important;width:100%;max-height:100dvh;border-radius:0}
 }

@@ -14,7 +14,8 @@ function renderPersons() {
     pl.innerHTML='<div class="empty"><div class="ico">👥</div><p>Henüz kişi yok.<br>+ Kişi Ekle ile başlayın.</p></div>';
     return;
   }
-  const sortedPersons = [...(window.persons||[])].sort((a,b) => a.name.localeCompare(b.name,'tr'));
+  const sortedPersons = [...(window.persons||[])].filter(p => !p.arsiv).sort((a,b) => a.name.localeCompare(b.name,'tr'));
+  const arsivdekiler = [...(window.persons||[])].filter(p => p.arsiv).sort((a,b) => a.name.localeCompare(b.name,'tr'));
   pl.innerHTML = `<div style="max-width:480px">` + sortedPersons.map(p => {
     const origIdx = (window.persons||[]).indexOf(p);
     const pid = p.id || '';
@@ -36,7 +37,16 @@ function renderPersons() {
         <button data-del-idx="${origIdx}" style="background:rgba(248,113,113,.12);color:var(--danger);border:1px solid rgba(248,113,113,.2);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer">Sil</button>
       </div>
     </div>`;
-  }).join('') + `</div>`;
+  }).join('')
+  // v8.233: ARSIV — gecmisi korunan kisiler (geri getir / kalici sil)
+  + (arsivdekiler.length ? `<details class="kisi-arsiv"><summary>🗄 Arşiv (${arsivdekiler.length}) — geçmişi korunuyor</summary>`
+      + arsivdekiler.map(p => `<div data-person-id="${p.id}" class="kisi-arsiv-satir">
+          <div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600">${window.esc(p.name)}</div>
+          <div style="font-size:11px;color:var(--muted)">arşiv · ${window.fmtD(String(p.arsiv).slice(0,10))}</div></div>
+          <button data-geri="${p.id}" class="kisi-mini">↩ Geri Getir</button>
+          <button data-kalici="${p.id}" class="kisi-mini sil">🗑</button></div>`).join('')
+      + `</details>` : '')
+  + `</div>`;
 
   if (!_prlHandlersAttached) {
     pl.addEventListener('click', (e) => {
@@ -44,6 +54,10 @@ function renderPersons() {
       if (editBtn) { editPerson(parseInt(editBtn.dataset.editIdx)); return; }
       const delBtn = e.target.closest('button[data-del-idx]');
       if (delBtn) { delPerson(parseInt(delBtn.dataset.delIdx)); return; }
+      const geriBtn = e.target.closest('button[data-geri]');
+      if (geriBtn) { window.kisiGeriGetir(geriBtn.dataset.geri); return; }
+      const kaliciBtn = e.target.closest('button[data-kalici]');
+      if (kaliciBtn) { window.kisiKaliciSil(kaliciBtn.dataset.kalici); return; }
       const card = e.target.closest('[data-person-id]');
       if (card && card.dataset.personId) openPersonHist(card.dataset.personId);
     });
@@ -124,13 +138,9 @@ function savePerson() {
 }
 
 function delPerson(i) {
-  // v8.231: borcu/kredisi olan kisi silinemez (kayitlar sahipsiz kalmasin)
+  // v8.233: silme = secim penceresi — Arsivle (gecmis kalir) / Kalici Sil (PIN, her seyiyle)
   const pr = window.persons[i];
-  if (pr && pr.id && window.Hareket) {
-    const bagli = (window.pays || []).filter(p => window.Hareket.payKisiye(p, pr, window.Hesap._baseOf)).length
-      + (window.creds || []).filter(c => window.Hareket.credKisiye(c, pr, window.Hesap._baseOf)).length;
-    if (bagli) { alert('"' + pr.name + '" kişisinin plan kayıtları var. Önce cari kartından borçlarını sil.'); return; }
-  }
+  if (pr && pr.id && window.kisiSilSec) { window.kisiSilSec(pr.id); return; }
   if (!confirm('Bu kişiyi silmek istiyor musunuz?')) return;
   window.Store.spliceAt('persons', i, 1);
   renderPersons();

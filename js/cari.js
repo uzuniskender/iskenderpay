@@ -185,7 +185,8 @@ function _render() {
           + (r.iban ? '<button class="cari-bilgi" data-act="kopya" data-copy="' + esc(r.iban) + '">🏦 ' + esc(r.iban) + ' 📋</button>' : ''))
          : '<div style="font-size:11px;color:var(--muted)">Rehber\'de telefon/IBAN kaydı yok</div>')
     + '</div>'
-    + '<button class="cari-btn" data-act="kisi">✏️ Kişi</button>'
+    + '<div class="cari-kisi-btn"><button class="cari-btn" data-act="kisi">✏️ Kişi</button>'
+    + '<button class="cari-btn sil" data-act="kisisil" title="Kişiyi arşivle veya sil">🗑</button></div>'
     + '</div>';
 
   // Özet
@@ -237,7 +238,7 @@ function _yukumlulukHTML(y, hareketler) {
     + '<button class="cari-btn sil" data-act="sil">🗑 Sil</button>'
     + '</div>';
 
-  h += y.kalemler.map(k => {
+  h += '<div class="cari-aylar' + (y.kalemler.length > 6 ? ' cok' : '') + '">' + y.kalemler.map(k => {
     const o = k.h.obj;
     const renk = k.oz.st === 'paid' ? 'var(--ok)' : k.oz.gecikmis ? 'var(--danger)' : k.oz.st === 'partial' ? 'var(--ora)' : 'var(--txt)';
     const durum = k.oz.st === 'paid' ? '✓ Ödendi' : k.oz.st === 'partial' ? 'Kısmi · kalan ' + fmt(k.oz.kalan) : k.oz.gecikmis ? 'Gecikmiş' : 'Bekliyor';
@@ -248,7 +249,7 @@ function _yukumlulukHTML(y, hareketler) {
       + '<div class="cari-tutar" style="color:' + renk + '">' + tutar + '</div>'
       + (k.oz.kalan > EPS ? '<button class="cari-btn ok kucuk" data-act="ode" data-ref="' + esc(refKey(k.ref)) + '">Öde</button>' : '<span style="width:44px"></span>')
       + '</div>';
-  }).join('');
+  }).join('') + '</div>';
 
   const refler = new Set(y.kalemler.map(k => refKey(k.ref)));
   const ilgili = hareketler.filter(e => refler.has(refKey(e.hareket.ref)));
@@ -258,11 +259,11 @@ function _yukumlulukHTML(y, hareketler) {
 
 function _hareketSatir(e) {
   const esc = window.esc, hr = e.hareket, iptal = !!hr.iptal;
-  return '<div class="cari-hrk' + (iptal ? ' iptal' : '') + '"' + (iptal ? '' : ' data-act="hrk" data-id="' + esc(String(e.id)) + '"') + '>'
+  return '<div class="cari-hrk' + (iptal ? ' iptal' : '') + '" data-act="hrk" data-id="' + esc(String(e.id)) + '">'
     + '<div style="flex:1;min-width:0"><div class="cari-hrk-t">' + esc(e.detail || '') + '</div>'
     + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + esc(window.fmtD(hr.tarih)) + (iptal ? ' · geri alındı' : (hr.duzenlendi ? ' · düzenlendi' : '')) + '</div></div>'
     + '<div class="cari-tutar" style="color:' + (iptal ? 'var(--muted)' : 'var(--ok)') + '">' + window.fmt(hr.tutar) + '</div>'
-    + (iptal ? '' : '<div style="color:var(--muted)">›</div>')
+    + (iptal ? '<div class="cari-hrk-sil" title="Kaydı sil">🗑</div>' : '<div style="color:var(--muted)">›</div>')
     + '</div>';
 }
 
@@ -304,7 +305,8 @@ function _tikla(ev) {
     case 'ayekle': if (y) openCariEk(y); break;
     case 'yapilandir': if (y) window.openRestructure(y.cred.id); break;
     case 'kapat': if (y) window.openCloseCredit(y.cred.id); break;
-    case 'sil': if (y) window.delByKey(encodeURIComponent(y.key)); break;
+    case 'sil': if (y) _borcSil(y); break;
+    case 'kisisil': window.kisiSilSec && window.kisiSilSec(_pid); break;
     case 'yeni': openCariYeni(); break;
     case 'kisi': {
       const i = (window.persons || []).findIndex(p => p.id === _pid);
@@ -315,6 +317,17 @@ function _tikla(ev) {
       try { navigator.clipboard.writeText(el.dataset.copy); window.showWarnToast && window.showWarnToast('Kopyalandı'); } catch (e) {}
       break;
   }
+}
+
+// Borç/kredi silme: PIN ister; mevcut güvenli silme akışı (hist'e arşiv + log) kullanılır.
+async function _borcSil(y) {
+  const odenmis = y.kalemler.filter(k => (k.h.obj.paid || 0) > 0 || k.h.obj.status === 'paid').length;
+  const ack = '<b>' + window.esc(_kisi().name + ' · ' + y.etiket) + '</b> — ' + y.kalemler.length + ' ' + (y.tip === 'kredi' ? 'taksit' : 'ay') + ' silinecek'
+    + (odenmis ? ' (' + odenmis + ' tanesi ödenmiş)' : '') + '.<br>Silinenler "Silinenler" listesine düşer, oradan geri getirilebilir.<br>Onaylamak için şifreni gir.';
+  if (!(await window.pinOnay((y.tip === 'kredi' ? 'Krediyi' : 'Borcu') + ' <span>Sil</span>', ack))) return;
+  const eskiConfirm = window.confirm;
+  window.confirm = () => true;          // delByKey kendi onayını sorar; PIN zaten alındı
+  try { window.delByKey(encodeURIComponent(y.key)); } finally { window.confirm = eskiConfirm; }
 }
 
 // ── AY / TAKSİT DÜZENLE ────────────────────────────────────────────────────

@@ -128,7 +128,7 @@ function renderMobil() {
 // ── Alt menü + sayfalar ────────────────────────────────────────────────────
 function _kisiListesiHTML() {
   const esc = window.esc;
-  return [...(window.persons || [])].filter(p => p.id).sort((a, b) => a.name.localeCompare(b.name, 'tr'))
+  return [...(window.persons || [])].filter(p => p.id && !p.arsiv).sort((a, b) => a.name.localeCompare(b.name, 'tr'))
     .map(p => '<button class="mh-satir" data-yeni-kisi="' + esc(p.id) + '"><span class="mh-avatar">' + esc(_bas(p.name)) + '</span>'
       + '<span class="mh-orta"><span class="mh-ad">' + esc(p.name) + '</span></span><span class="mh-ok">›</span></button>').join('')
     || '<div class="mh-bos">Önce kişi ekleyin.</div>';

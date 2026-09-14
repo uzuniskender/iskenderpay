@@ -74,6 +74,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/hareket.js';
     import './js/cari.js';
     import './js/mobil.js';
+    import './js/guvenlik.js';
     import './js/altin-onizleme.js';
     import './js/search.js';
   </script>
@@ -531,8 +532,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1278';
-var APP_BUILD   = '20260914-f95c530';
+var APP_VERSION = 'v8.1282';
+var APP_BUILD   = '20260914-c0cb289';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -803,7 +804,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="HRK_INFO" style="font-size:11px;color:var(--muted);margin:0 2px 10px;line-height:1.4"></div>
     <div class="brow">
       <button class="btn bc" data-modal-close="HRKMOD">İptal</button>
-      <button class="btn" id="HRK_DEL" onclick="geriAlHareket()" style="flex:1;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)">Geri Al</button>
+      <button class="btn" id="HRK_DEL" onclick="geriAlHareket()" title="Ödemeyi iptal et, iz kalır" style="flex:1;background:rgba(251,146,60,.14);color:var(--ora);border:1px solid rgba(251,146,60,.35)">↩ Geri Al</button>
+      <button class="btn" id="HRK_SIL" onclick="kaydiSilHareket()" title="Kaydı sistemden sil (şifre)" style="flex:none;padding:0 14px;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)">🗑</button>
       <button class="btn bs" onclick="saveHareket()">Kaydet</button>
     </div>
   </div>
@@ -852,6 +854,33 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button onclick="ModalManager.closeAll();switchPlan()"><span>🔄</span><b>Plan Değiştir</b><small>Diğer ödeme planı</small></button>
       <button onclick="ModalManager.closeAll();doGoogleSignOut()" class="tehlike"><span>🚪</span><b>Çıkış</b><small>Hesaptan çık</small></button>
     </div>
+  </div>
+</div>
+
+<!-- ŞİFRE ONAYI (silme işlemleri, v8.233) -->
+<div class="mov" id="PINMOD" data-boyut-yok style="z-index:470">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2 id="PIN_T">Şifreyle <span>Onayla</span></h2>
+    <div id="PIN_ACK" style="font-size:13px;color:var(--muted);line-height:1.55;margin-bottom:12px"></div>
+    <div class="pw-wrap"><input class="fi mono-inp" id="PIN_INP" type="password" autocomplete="off" placeholder="Şifren" onkeydown="if(event.key==='Enter')pinOnayla()"><button class="pw-eye" type="button" onclick="toggleEye('PIN_INP')">👁</button></div>
+    <div id="PIN_ERR" style="font-size:12px;color:var(--danger);min-height:16px;margin:4px 2px 0"></div>
+    <div class="brow"><button class="btn bc" type="button" onclick="pinVazgec()">Vazgeç</button><button class="btn" type="button" onclick="pinOnayla()" style="flex:1;background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff">Onayla ve Sil</button></div>
+  </div>
+</div>
+
+<!-- KİŞİ SİL: arşiv mi kalıcı mı (v8.233) -->
+<div class="mov" id="KISISIL" data-boyut-yok style="z-index:460">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2>Kişiyi <span>Kaldır</span></h2>
+    <input type="hidden" id="KS_PID">
+    <div id="KS_AD" style="font-size:15px;font-weight:700;margin-bottom:12px"></div>
+    <div class="ks-secim">
+      <button type="button" id="KS_ARSIV" onclick="ModalManager.close('KISISIL');kisiArsivle(document.getElementById('KS_PID').value)"><span>🗄</span><b>Arşivle</b><small id="KS_ARSIV_NOT">Listeden kalkar, geçmişi ve logları durur.</small></button>
+      <button type="button" class="tehlike" onclick="ModalManager.close('KISISIL');kisiKaliciSil(document.getElementById('KS_PID').value)"><span>🗑</span><b>Kalıcı Sil</b><small>Kişi, borçları, kredileri, ödemeleri ve logları birlikte silinir. Şifre ister.</small></button>
+    </div>
+    <div class="brow"><button class="btn bc" type="button" data-modal-close="KISISIL">Vazgeç</button></div>
   </div>
 </div>
 
