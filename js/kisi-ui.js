@@ -45,6 +45,11 @@ export function kisiVeriDuzenle() {
   if (!r.degisti) return r.rapor;
   _guvenlikKopyasi('v8.234');
   _yaz(r.d, ['persons', 'pays', 'creds']);
+  // Sahada (15 Eyl) girişten hemen sonra düzenleme bellekte uygulandı ama ilk senkron turu eski
+  // veriyi geri yükledi (kayıp yok, düzenleme kaybolmuştu). Bekleyen değişiklik işaretlenir ve
+  // hemen kaydedilir: senkron "bekleyen değişiklik var" görüp ezmez.
+  window.Store.dirty = true;
+  if (window.saveSecureNow) window.saveSecureNow().catch(e => console.warn('[kisi] kayıt hatası:', e));
   const x = r.rapor, parca = [];
   if (x.rehberdenYeni) parca.push(x.rehberdenYeni + ' rehber kaydı kişi oldu');
   if (x.rehberEslesen) parca.push(x.rehberEslesen + ' rehber kaydı mevcut kişiye eklendi');
