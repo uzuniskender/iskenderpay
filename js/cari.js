@@ -128,6 +128,57 @@ export function ayPatch(h, amount, date, rates) {
   return Object.assign(patch, p2);
 }
 
+// ── DÜZENLİ ÖDEME YAPILANDIR / ERKEN KAPAT (v8.237) — saf ─────────────────
+// Kredideki "Yapılandır / Erken Kapat" artık her borçta. Düzenli ödeme grubunda (Akbank gibi):
+//   • ÖDENMİŞ aylar olduğu gibi kalır.
+//   • KISMİ ödenmiş ay: ödenen kısmı ödenmiş ay olarak kalır (tutarı = ödenen), kalanı yeni plana girer.
+//   • Ödemesiz aylar kaldırılır (arşive), yerine yeni plan kurulur (aynı grup, aynı kişi, aynı para).
+// kalemler: grubun pay nesneleri. Dönüş: { kalan (yerel), arsiv:[...], guncelle:[{id, patch}], yeni:[...] }
+export function grupAcikKalan(kalemler, rates) {
+  return (kalemler || []).reduce((s, p) => s + kalemOzet(p, rates).kalan, 0);
+}
+
+function _grupAyir(kalemler, rates) {
+  const arsiv = [], guncelle = [];
+  (kalemler || []).forEach(p => {
+    const oz = kalemOzet(p, rates);
+    if (oz.kalan === 0) return;                                   // ödenmiş: dokunma
+    if (oz.odenen > 0) guncelle.push({ id: p.id, patch: { amount: Math.round(oz.odenen * 10000) / 10000, paid: oz.odenen, status: 'paid', ...(oz.para !== 'TRY' ? { odenenPara: oz.para } : {}) } });
+    else arsiv.push(p);
+  });
+  return { arsiv, guncelle };
+}
+
+export function grupYapilandirPlani(kalemler, { start, adet, tutar }, rates) {
+  if (!kalemler || !kalemler.length) throw new Error('Borç bulunamadı.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(start || ''))) throw new Error('Başlangıç tarihi seçin.');
+  if (!(adet >= 1 && adet <= 360)) throw new Error('Ay sayısı 1-360 olmalı.');
+  if (!(tutar > 0)) throw new Error('Aylık tutar girin.');
+  const kalan = grupAcikKalan(kalemler, rates);
+  if (!(kalan > 0)) throw new Error('Bu borçta ödenmemiş ay yok.');
+  const ref = [...kalemler].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const { arsiv, guncelle } = _grupAyir(kalemler, rates);
+  const yeni = odemeKayitlari({ name: ref.name, personId: ref.personId, amount: tutar, currency: ref.currency || 'TRY', start, adet,
+    category: ref.category, desc: ref.desc, groupId: ref.groupId });
+  return { kalan, arsiv, guncelle, yeni };
+}
+
+export function grupKapatPlani(kalemler, { tutar, tarih }, rates) {
+  if (!kalemler || !kalemler.length) throw new Error('Borç bulunamadı.');
+  const kalan = grupAcikKalan(kalemler, rates);
+  if (!(kalan > 0)) throw new Error('Bu borçta ödenmemiş ay yok.');
+  if (!(tutar > 0)) throw new Error('Kapatma tutarı 0\'dan büyük olmalı.');
+  const para = (kalemler[0].currency || 'TRY');
+  if (tutar > kalan + (para === 'TRY' ? 0.5 : 0.005)) throw new Error('Kapatma tutarı kalan borçtan büyük olamaz.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(tarih || ''))) throw new Error('Kapatma tarihi seçin.');
+  const ref = [...kalemler].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const { arsiv, guncelle } = _grupAyir(kalemler, rates);
+  const kapama = odemeKayitlari({ name: ref.name, personId: ref.personId, amount: tutar, currency: para, start: tarih, adet: 1,
+    category: ref.category, desc: ref.desc, groupId: ref.groupId })[0];
+  Object.assign(kapama, { _close: true });
+  return { kalan, tasarruf: Math.max(0, kalan - tutar), arsiv, guncelle, kapama };
+}
+
 // ── ERTELE (v8.235) — saf ─────────────────────────────────────────────────
 // kalemler: [{ key, obj }] (aynı borcun kalemleri). secKey: ertelenen kalemin anahtarı.
 // kapsam 'tek': yalnız o kalem yeniTarih'e gider.
@@ -276,7 +327,7 @@ function _yukumlulukHTML(y, hareketler) {
     + (acikIlk ? '<button class="cari-btn ok" data-act="ode" data-ref="' + esc(refKey(acikIlk.ref)) + '">💰 Ödeme Gir</button>' : '')
     + '<button class="cari-btn" data-act="duzenle">✏️ Düzenle</button>'
     + (y.tip === 'odeme' ? '<button class="cari-btn" data-act="ayekle">➕ Ay Ekle</button>' : '')
-    + (y.tip === 'kredi' && !y.cred.closed ? '<button class="cari-btn" data-act="yapilandir">🔁 Yapılandır</button><button class="cari-btn" data-act="kapat">🏁 Erken Kapat</button>' : '')
+    + (y.ozet.acikN && !(y.cred && y.cred.closed) ? '<button class="cari-btn" data-act="yapilandir">🔁 Yapılandır</button><button class="cari-btn" data-act="kapat">🏁 Erken Kapat</button>' : '')
     + '<button class="cari-btn" data-act="tasi" title="Bu borcu başka kişinin cari kartına taşı">↪ Taşı</button>'
     + '<button class="cari-btn sil" data-act="sil">🗑 Sil</button>'
     + '</div>';
@@ -347,8 +398,8 @@ function _tikla(ev) {
     case 'ay': openCariAy(el.dataset.ref); break;
     case 'duzenle': if (y) openCariGrp(y); break;
     case 'ayekle': if (y) openCariEk(y); break;
-    case 'yapilandir': if (y) window.openRestructure(y.cred.id); break;
-    case 'kapat': if (y) window.openCloseCredit(y.cred.id); break;
+    case 'yapilandir': if (y) window.openRestructure(y.key); break;
+    case 'kapat': if (y) window.openCloseCredit(y.key); break;
     case 'sil': if (y) _borcSil(y); break;
     case 'kisisil': window.kisiSilSec && window.kisiSilSec(_pid); break;
     case 'birlestir': window.openBirlestir && window.openBirlestir(_pid); break;

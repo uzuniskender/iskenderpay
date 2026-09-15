@@ -57,16 +57,31 @@ function openRow(keyEnc) {
     }
   }
   const isCredRow = key.startsWith('cred_');
+  h+=_borcIslemleri(key, mx[key]?._personId, dispName);
   h+=`<div class="dacts">
     <button class="dact da-edit" onclick="editByKey('${encodeURIComponent(key)}')">Düzenle</button>
-    ${isCredRow?`<button class="dact da-edit" style="background:rgba(251,146,60,.15);border-color:rgba(251,146,60,.4);color:#fdba74" onclick="closeDV();setTimeout(()=>window.openRestructure('${key.replace('cred_','')}'),50)">Yapılandır</button>`:''}
-    ${isCredRow?`<button class="dact da-edit" style="background:rgba(34,197,94,.15);border-color:rgba(34,197,94,.4);color:#86efac" onclick="closeDV();setTimeout(()=>window.openCloseCredit('${key.replace('cred_','')}'),50)">Erken Kapat</button>`:''}
     ${!isCredRow?`<button class="dact da-edit" style="background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.4);color:#a5b4fc" onclick="convertToCredit('${encodeURIComponent(key)}')">Krediye Dönüştür</button>`:''}
     <button class="dact da-del" onclick="delByKey('${encodeURIComponent(key)}')">Sil</button>
     <button class="dact da-close" onclick="closeDV()">Kapat</button>
   </div>`;
   document.getElementById('DC').innerHTML=h;
   ModalManager.open('DV');
+}
+
+// v8.237: TEK işlem seti — plan satırı, plan hücresi ve cari kart aynı borç işlemlerini sunar.
+// (Eskiden Yapılandır/Erken Kapat yalnız kredide, Taşı/Ertele yalnız cari kartta vardı.)
+function _borcIslemleri(key, pid, ad, cariDugmesiYok) {
+  const acik = window.getAllItems().filter(p => (p._cid ? 'cred_' + p._cid : (p.groupId ? 'g_' + p.groupId : 'pay_' + String(Math.floor(Number(p.id))))) === key)
+    .some(p => kalemOzet(p, window.rates).kalan > 0);
+  const cred = key.startsWith('cred_') ? window.findCredById(key.slice(5)) : null;
+  const kisiVar = pid && (window.persons || []).some(p => p.id === pid);
+  const k = window.esc(key), a = window.esc(String(ad || '').replace(/'/g, ' '));
+  return `<div class="dhizli">`
+    + (kisiVar && !cariDugmesiYok ? `<button class="dact da-edit" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari Kart</button>` : '')
+    + (acik && !(cred && cred.closed) ? `<button class="dact da-part" onclick="closeDV();setTimeout(()=>openRestructure('${k}'),50)">🔁 Yapılandır</button>`
+      + `<button class="dact da-ok" onclick="closeDV();setTimeout(()=>openCloseCredit('${k}'),50)">🏁 Erken Kapat</button>` : '')
+    + `<button class="dact da-edit" onclick="closeDV();openBorcTasi(${kisiVar ? `'${window.esc(pid)}'` : 'null'},'${k}','${a}')">↪ Taşı</button>`
+    + `</div>`;
 }
 
 // _buildPersonHistory: o ay öncesi, refItem'ın kişisi/grubunun paidItems özeti (v8.161)
@@ -119,6 +134,7 @@ function openCell(keyEnc,month) {
   h+=`<div class="dhizli">${pid&&(window.persons||[]).some(p=>p.id===pid)?`<button class="dact da-edit" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari Kartı Aç</button>`:''}`
     +acikKalemler.map(p=>{const r=p._cid?('c|'+p._cid+'|'+p._ii):('p|'+p.id);return `<button class="dact da-part" onclick="openCariErtele('${window.esc(r)}')">⏭ Ertele${acikKalemler.length>1?' · '+window.esc(window.fmtA(kalemOzet(p,window.rates).kalan,kalemOzet(p,window.rates).para)):''}</button>`;}).join('')
     +`</div>`;
+  h+=_borcIslemleri(key, pid, name, true);
   h+=`<div class="drow"><span class="dk">Tutar</span><span class="dv">${window.fmt(c.try)}${orig?` <span style="font-size:11px;opacity:.65">${window.fmtA(orig.amount,orig.currency)}</span>`:''}</span></div>`;
   h+=`<div class="drow"><span class="dk">Durum</span><span class="${sCls(s,over)}" style="font-weight:600">${sLbl(s,over)}</span></div>`;
   if(c.odenen>0.5) h+=`<div class="drow"><span class="dk">Ödenen</span><span class="dv" style="color:var(--ok)">${window.fmt(c.odenen)}</span></div>`;
@@ -136,7 +152,8 @@ function openCell(keyEnc,month) {
   </div>`;
   const cellKey=encodeURIComponent(key),cellMo=month;
   const isSingleItem=c.items.length===1&&!c.items[0]._cid;
-  const delBtn=isSingleItem?`<button class="dact da-del" onclick="delMonthEntry('${encodeURIComponent(String(c.items[0].id))}')">Bu Ayı Sil</button>`:`<button class="dact da-del" onclick="delCellItems('${cellKey}','${cellMo}')">Bu Ayı Sil</button>`;
+  // v8.237: kredi taksiti tek başına silinmez (kredi planı bozulur) -> kredide "Bu Ayı Sil" yok; Yapılandır/Erken Kapat var
+  const delBtn=isCreditCell?'':isSingleItem?`<button class="dact da-del" onclick="delMonthEntry('${encodeURIComponent(String(c.items[0].id))}')">Bu Ayı Sil</button>`:`<button class="dact da-del" onclick="delCellItems('${cellKey}','${cellMo}')">Bu Ayı Sil</button>`;
   const editItem=c.items.find(x=>!x._cid);
   const editBtn=editItem?`<button class="dact da-edit" onclick="closeDV();setTimeout(()=>window.editPay('${editItem.id}'),50)">Düzenle</button>`:isCreditCell?`<button class="dact da-edit" onclick="editByKey('${cellKey}')">Tüm Krediyi Düzenle</button>`:`<button class="dact da-edit" onclick="editByKey('${cellKey}')">Düzenle</button>`;
   // Geçmiş ödemeler

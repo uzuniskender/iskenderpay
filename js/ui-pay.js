@@ -2,6 +2,44 @@
 // Ödeme ve kredi CRUD
 
 import { toLocalISO } from './util.js';
+import { grupYapilandirPlani, grupKapatPlani, grupAcikKalan } from './cari.js';
+import { kalemOzet, tamOdePatch } from './para.js';
+
+// v8.237: Yapılandır / Erken Kapat HER BORÇTA. Anahtar 'cred_<id>' ya da çıplak kredi id'si -> kredi;
+// 'g_<groupId>' / 'pay_<id>' -> düzenli ödeme grubu (Akbank gibi krediler de çoğu zaman böyle kayıtlı).
+function _borcHedef(anahtar) {
+  const k = String(anahtar || '');
+  if (k.startsWith('g_') || k.startsWith('pay_')) {
+    const kalemler = (window.pays || []).filter(p => (p.groupId ? 'g_' + p.groupId : 'pay_' + String(Math.floor(Number(p.id)))) === k);
+    return kalemler.length ? { tip: 'grup', key: k, kalemler, ad: kalemler[0].name + ((kalemler[0].desc || kalemler[0].category) ? ' (' + (kalemler[0].desc || kalemler[0].category) + ')' : ''), para: kalemler[0].currency || 'TRY' } : null;
+  }
+  const c = window.findCredById(k.startsWith('cred_') ? k.slice(5) : k);
+  return c ? { tip: 'kredi', key: 'cred_' + c.id, cred: c, ad: c.name + (c.desc ? ' (' + c.desc + ')' : ''), para: 'TRY' } : null;
+}
+const _birim = para => para === 'EUR' ? '€' : para === 'GOLD' ? 'gr' : '₺';
+const _yaz = (a, para) => window.fmtA(a, para);
+
+function _grupUygula(h, plan, logTip, logBaslik, logDetay) {
+  const iso = new Date().toISOString();
+  window.Store.tx(() => {
+    plan.arsiv.forEach(p => window.Store.unshift('hist', { ...p, restructAt: iso, _yapilandirmaGrup: p.groupId }));
+    const silIds = new Set(plan.arsiv.map(p => String(p.id)));
+    window.Store.removeWhere('pays', p => silIds.has(String(p.id)));
+    plan.guncelle.forEach(g => { const p = window.findPayById(g.id); if (p) window.Store.mutateItem(p, g.patch); });
+    (plan.yeni || []).forEach(r => window.Store.push('pays', r));
+    if (plan.kapama) {
+      const k = plan.kapama;
+      window.Store.push('pays', k);
+      const oz = kalemOzet(k, window.rates);
+      Object.assign(k, tamOdePatch(k, window.rates));
+      const paidId = 'pi_' + Date.now() + '_' + Math.random();
+      window.Store.push('paidItems', { ...k, paidId, status: 'paid', paid: oz.tamTL, paidAt: iso });
+      try { if (window.Hareket) window.Hareket.planOdemesiLogla(k, k.amount, paidId, false); } catch (e) {}
+    }
+    const ilk = h.kalemler[0];
+    window.addLog(logTip, logBaslik, logDetay, 0, { personId: ilk.personId, groupId: ilk.groupId });
+  });
+}
 
 function openPay() {
   document.getElementById('EID').value='';
@@ -217,9 +255,26 @@ function updLP() {
 // taksitler pays'e taşınmaz: hist'e arşivlenir + paidItems donar (trend korunur)
 // + actLog'a yapılandırma kaydı düşer. Saf çekirdek: Hesap.yapilandirPlan /
 // Hesap.dondurKrediPaidItems.
-function openRestructure(credId) {
-  const c = window.findCredById(credId);
-  if (!c) { alert('Kredi bulunamadı.'); return; }
+function openRestructure(anahtar) {
+  const h = _borcHedef(anahtar);
+  if (!h) { alert('Borç bulunamadı.'); return; }
+  const lbl = document.getElementById('YPA_LBL');
+  if (h.tip === 'grup') {
+    const acik = h.kalemler.filter(p => kalemOzet(p, window.rates).kalan > 0).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (!acik.length) { alert('Bu borçta ödenmemiş ay yok.'); return; }
+    const kalan = grupAcikKalan(h.kalemler, window.rates);
+    document.getElementById('YPC').value = h.key;
+    document.getElementById('YPN').textContent = h.ad + ' — ' + h.kalemler.length + ' ay (' + (h.kalemler.length - acik.length) + ' ödendi, ' + acik.length + ' açık) · kalan ' + _yaz(kalan, h.para);
+    document.getElementById('YPS').value = acik[0].date;
+    document.getElementById('YPI').value = acik.length;
+    document.getElementById('YPA').value = Math.round((kalan / acik.length) * 100) / 100;
+    if (lbl) lbl.textContent = 'Aylık Tutar (' + _birim(h.para) + ')';
+    updYP();
+    ModalManager.open('YPM');
+    return;
+  }
+  const c = h.cred, credId = c.id;
+  if (lbl) lbl.textContent = 'Aylık Taksit (₺)';
   document.getElementById('YPC').value = credId;
   const paidN = (c.pays || []).filter(p => (p.status || 'pending') === 'paid').length;
   const pendN = (c.pays || []).length - paidN;
@@ -236,6 +291,8 @@ function openRestructure(credId) {
 }
 
 function updYP() {
+  const _h = _borcHedef(document.getElementById('YPC').value);
+  const _p = _h ? _h.para : 'TRY';
   const i = parseInt(document.getElementById('YPI').value) || 0;
   const m = parseFloat(document.getElementById('YPA').value) || 0;
   const s = document.getElementById('YPS').value;
@@ -245,21 +302,34 @@ function updYP() {
     const [sy, sm0] = s.split('-').map(Number);
     const totalEndMo = (sm0 - 1) + (i - 1);
     const endYr = sy + Math.floor(totalEndMo / 12), endMo = ((totalEndMo % 12) + 12) % 12;
-    document.getElementById('YPLT').textContent = window.fmt(m * i);
-    document.getElementById('YPLM').textContent = window.fmt(m);
+    document.getElementById('YPLT').textContent = _yaz(m * i, _p)
+      + (_h && _h.tip === 'grup' ? ' (kalan ' + _yaz(grupAcikKalan(_h.kalemler, window.rates), _p) + ')' : '');
+    document.getElementById('YPLM').textContent = _yaz(m, _p);
     document.getElementById('YPLC').textContent = i + ' taksit';
     document.getElementById('YPLE').textContent = new Date(endYr, endMo, 1).toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
   } else lp.classList.remove('show');
 }
 
 function saveRestructure() {
-  const credId = document.getElementById('YPC').value;
-  const c = window.findCredById(credId);
-  if (!c) { alert('Kredi bulunamadı.'); return; }
+  const _h = _borcHedef(document.getElementById('YPC').value);
+  if (!_h) { alert('Borç bulunamadı.'); return; }
   const start = document.getElementById('YPS').value;
   const inst = parseInt(document.getElementById('YPI').value) || 0;
   const monthly = parseFloat(document.getElementById('YPA').value) || 0;
   if (!start || !inst || !monthly) { alert('Başlangıç, taksit sayısı ve aylık tutar zorunlu'); return; }
+  if (_h.tip === 'grup') {
+    let plan;
+    try { plan = grupYapilandirPlani(_h.kalemler, { start, adet: inst, tutar: monthly }, window.rates); } catch (e) { alert(e.message); return; }
+    const yeniToplam = monthly * inst;
+    if (!confirm(_h.ad + ' yapılandırılacak.\n\nKalan borç ' + _yaz(plan.kalan, _h.para) + ' → ' + inst + ' × ' + _yaz(monthly, _h.para) + ' = ' + _yaz(yeniToplam, _h.para)
+        + (Math.abs(yeniToplam - plan.kalan) > (_h.para === 'TRY' ? 0.5 : 0.005) ? ' (fark ' + _yaz(yeniToplam - plan.kalan, _h.para) + ')' : '')
+        + '.\nÖdenmiş aylar aynen kalır' + (plan.guncelle.length ? ', kısmi ödenmiş ' + plan.guncelle.length + ' ayın ödenen kısmı ödenmiş olarak kalır' : '') + '.\n\nEmin misin?')) return;
+    _grupUygula(_h, plan, 'cred_restructure', 'Borç yapılandırıldı',
+      _h.ad + ' · kalan ' + _yaz(plan.kalan, _h.para) + ' → ' + inst + ' × ' + _yaz(monthly, _h.para) + ' · ilk ' + start);
+    window.closeMov('YPM');
+    return;
+  }
+  const c = _h.cred, credId = c.id;
 
   const prevInst = (c.pays || []).length;
   const prevPaid = (c.pays || []).filter(p => (p.status || 'pending') === 'paid').length;
@@ -309,9 +379,26 @@ function _kalanBorc(c) {
   }, 0);
 }
 
-function openCloseCredit(credId) {
-  const c = window.findCredById(credId);
-  if (!c) { alert('Kredi bulunamadı.'); return; }
+function openCloseCredit(anahtar) {
+  const h = _borcHedef(anahtar);
+  if (!h) { alert('Borç bulunamadı.'); return; }
+  const klbl = document.getElementById('KCA_LBL');
+  if (h.tip === 'grup') {
+    const kalan = grupAcikKalan(h.kalemler, window.rates);
+    if (!(kalan > 0)) { alert('Bu borçta ödenmemiş ay yok — kapatılacak bir şey yok.'); return; }
+    const acikN = h.kalemler.filter(p => kalemOzet(p, window.rates).kalan > 0).length;
+    document.getElementById('KCC').value = h.key;
+    document.getElementById('KCN').textContent = h.ad + ' — kalan ' + acikN + ' ay · ' + _yaz(kalan, h.para) + ' kalan borç';
+    document.getElementById('KCA').value = Math.round(kalan * 100) / 100;
+    if (klbl) klbl.textContent = 'Kapatma Tutarı (' + _birim(h.para) + ')';
+    const _d0 = new Date();
+    document.getElementById('KCD').value = toLocalISO(_d0.getFullYear(), _d0.getMonth(), _d0.getDate());
+    updKC();
+    ModalManager.open('KCM');
+    return;
+  }
+  const c = h.cred, credId = c.id;
+  if (klbl) klbl.textContent = 'Kapatma Tutarı (₺)';
   if (c.closed) { alert('Bu kredi zaten kapatılmış.'); return; }
   const pend = (c.pays || []).filter(p => (p.status || 'pending') !== 'paid');
   if (!pend.length) { alert('Bu kredide ödenmemiş taksit yok — kapatılacak bir şey yok.'); return; }
@@ -327,20 +414,33 @@ function openCloseCredit(credId) {
 }
 
 function updKC() {
-  const c = window.findCredById(document.getElementById('KCC').value);
-  const kalan = c ? Math.round(_kalanBorc(c)) : 0;
+  const h = _borcHedef(document.getElementById('KCC').value);
+  const para = h ? h.para : 'TRY';
+  const kalan = !h ? 0 : h.tip === 'grup' ? grupAcikKalan(h.kalemler, window.rates) : Math.round(_kalanBorc(h.cred));
   const pay = parseFloat(document.getElementById('KCA').value) || 0;
-  const save = Math.max(0, kalan - Math.round(pay));
+  const save = Math.max(0, kalan - pay);
   document.getElementById('KCL').classList.add('show');
-  document.getElementById('KCLK').textContent = window.fmt(kalan);
-  document.getElementById('KCLP').textContent = window.fmt(Math.round(pay));
-  document.getElementById('KCLS').textContent = window.fmt(save);
+  document.getElementById('KCLK').textContent = _yaz(kalan, para);
+  document.getElementById('KCLP').textContent = _yaz(pay, para);
+  document.getElementById('KCLS').textContent = _yaz(save, para);
 }
 
 function saveCloseCredit() {
-  const credId = document.getElementById('KCC').value;
-  const c = window.findCredById(credId);
-  if (!c) { alert('Kredi bulunamadı.'); return; }
+  const _h = _borcHedef(document.getElementById('KCC').value);
+  if (!_h) { alert('Borç bulunamadı.'); return; }
+  if (_h.tip === 'grup') {
+    const tutar = parseFloat(document.getElementById('KCA').value) || 0;
+    const tarih = document.getElementById('KCD').value;
+    let plan;
+    try { plan = grupKapatPlani(_h.kalemler, { tutar, tarih }, window.rates); } catch (e) { alert(e.message); return; }
+    if (!confirm(_h.ad + ' erken kapatılacak.\n\nKalan ' + _yaz(plan.kalan, _h.para) + ' tek ' + _yaz(tutar, _h.para) + ' ödemeyle kapanır'
+        + (plan.tasarruf > 0 ? ' (' + _yaz(plan.tasarruf, _h.para) + ' tasarruf)' : '') + '.\nÖdenmiş aylar aynen kalır.\n\nEmin misin?')) return;
+    _grupUygula(_h, plan, 'cred_close', 'Borç kapatıldı',
+      _h.ad + ' · ' + _yaz(plan.kalan, _h.para) + ' → ' + _yaz(tutar, _h.para) + (plan.tasarruf > 0 ? ' · ' + _yaz(plan.tasarruf, _h.para) + ' tasarruf' : ''));
+    window.closeMov('KCM');
+    return;
+  }
+  const c = _h.cred, credId = c.id;
   const kalan = Math.round(_kalanBorc(c));
   const pay = Math.round(parseFloat(document.getElementById('KCA').value) || 0);
   const _d = new Date();
