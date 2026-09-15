@@ -234,6 +234,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
             <option value="gecikmis">Gecikmiş</option>
           </select>
         </div>
+        <div style="display:flex;gap:7px;margin-top:7px;align-items:center">
+          <label for="KISI_SIRA" style="font-size:11px;color:var(--muted);flex:none">Sırala</label>
+          <select id="KISI_SIRA" onchange="renderPersons()" class="fi" style="flex:1;margin:0">
+            <option value="borc">Borç: çoktan aza</option>
+            <option value="borcAz">Borç: azdan çoğa</option>
+            <option value="gecikmis">Gecikmiş borç önce</option>
+            <option value="yakin">Yaklaşan ödeme tarihi</option>
+            <option value="ad">İsim: A → Z</option>
+            <option value="adZA">İsim: Z → A</option>
+          </select>
+        </div>
       </div>
       <div style="padding:0 16px 70px" id="PRL"></div>
     </div>
@@ -524,8 +535,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1300';
-var APP_BUILD   = '20260915-7f9fe42';
+var APP_VERSION = 'v8.1301';
+var APP_BUILD   = '20260915-6b08e72';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {

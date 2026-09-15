@@ -9,7 +9,8 @@ import { kalemOzet } from './para.js';
 function getAllItems() {
   const credPays = [];
   // v8.231: kredi aciklamasi (cari kart) plan satirinda ayirt edici etiket olur ("ALI (Araç)")
-  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx, ...(c.desc?{desc:c.desc}:{})})));
+  // v8.236: kredi kalemi kişi bağını (personId) taşır -> plan satırı cari kartı açar
+  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx, ...(c.desc?{desc:c.desc}:{}), ...(c.personId?{personId:c.personId}:{})})));
   return [...window.pays, ...credPays];
 }
 

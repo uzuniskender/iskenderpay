@@ -30,14 +30,27 @@ function renderPersons() {
   let aktif = [...(window.persons||[])].filter(p => !p.arsiv && eslesir(p));
   if (filtre === 'borclu') aktif = aktif.filter(p => { const s = ozetOf(p); return s && s.bekleyen > 0.5; });
   if (filtre === 'gecikmis') aktif = aktif.filter(p => { const s = ozetOf(p); return s && s.gecikmis > 0.5; });
-  // Borcu olanlar üstte (en büyük bekleyen önce), sonra borcu olmayanlar alfabetik
-  aktif.sort((a, b) => {
-    const sa = ozetOf(a), sb = ozetOf(b);
-    const ba = sa ? sa.bekleyen : 0, bb = sb ? sb.bekleyen : 0;
-    if ((ba > 0.5) !== (bb > 0.5)) return ba > 0.5 ? -1 : 1;
-    if (ba > 0.5 && Math.abs(ba - bb) > 0.5) return bb - ba;
-    return a.name.localeCompare(b.name, 'tr');
-  });
+  // v8.236: sıralama seçimi (cihazda hatırlanır)
+  const siraEl = document.getElementById('KISI_SIRA');
+  if (siraEl && !siraEl.dataset.yuklendi) {
+    siraEl.dataset.yuklendi = '1';
+    try { const k = localStorage.getItem('ipay-kisi-sira'); if (k && [...siraEl.options].some(o => o.value === k)) siraEl.value = k; } catch (e) {}
+  }
+  const sira = siraEl ? siraEl.value : 'borc';
+  try { localStorage.setItem('ipay-kisi-sira', sira); } catch (e) {}
+  const ad = (a, b) => a.name.localeCompare(b.name, 'tr');
+  const bek = p => { const s = ozetOf(p); return s ? s.bekleyen : 0; };
+  const gec = p => { const s = ozetOf(p); return s ? s.gecikmis : 0; };
+  const yakin = p => { const s = ozetOf(p); return (s && s.yakin) || '9999-99-99'; };
+  const siralar = {
+    borc: (a, b) => (bek(b) - bek(a)) || ad(a, b),
+    borcAz: (a, b) => { const x = bek(a) > 0.5, y = bek(b) > 0.5; if (x !== y) return x ? -1 : 1; return (bek(a) - bek(b)) || ad(a, b); },
+    ad,
+    adZA: (a, b) => ad(b, a),
+    gecikmis: (a, b) => (gec(b) - gec(a)) || (bek(b) - bek(a)) || ad(a, b),
+    yakin: (a, b) => yakin(a).localeCompare(yakin(b)) || ad(a, b),
+  };
+  aktif.sort(siralar[sira] || siralar.borc);
   const arsivdekiler = [...(window.persons||[])].filter(p => p.arsiv && eslesir(p)).sort((a,b) => a.name.localeCompare(b.name,'tr'));
   const borclu = aktif.filter(p => { const s = ozetOf(p); return s && s.bekleyen > 0.5; }).length;
   pl.innerHTML = `<div style="max-width:560px">`
@@ -245,6 +258,13 @@ function _buildPersonSummary(personId, personName) {
       addPending(oz, String(p.date) < bugunISO, 'cred:' + c.id, c.name + ' (kredi)');
     });
   });
+  // En yakın ödenmemiş kalemin tarihi (sıralama: "yaklaşan ödeme")
+  let yakin = null;
+  (window.pays || []).filter(matches).forEach(p => { if (kalemOzet(p, window.rates).kalan > 0 && (!yakin || String(p.date) < yakin)) yakin = String(p.date); });
+  (window.creds || []).forEach(c => {
+    if (c.personId ? c.personId !== personId : baseOf(c.name) !== baseName) return;
+    (c.pays || []).forEach(t => { if (kalemOzet({ ...t, _cid: c.id }, window.rates).kalan > 0 && (!yakin || String(t.date) < yakin)) yakin = String(t.date); });
+  });
   const personPaidItems = (window.paidItems || []).filter(matches);
   const odenmisToplam = personPaidItems.reduce((s, pi) => s + (pi.paid || 0), 0);
   const _seenLabel = {};
@@ -260,6 +280,7 @@ function _buildPersonSummary(personId, personName) {
     gecikmis, gecikmisCount,
     odenmisToplam, odenmisCount: personPaidItems.length,
     breakdown,
+    yakin,
     para: paraTopla(paraOz)
   };
 }

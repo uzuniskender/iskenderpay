@@ -77,9 +77,10 @@ function _satirHTML(s, tur) {
   const alt = tur === 'gec'
     ? '<span class="mh-kirmizi">' + s.gun + ' gün gecikti</span>'
     : (s.gun === 0 ? '<span class="mh-sari">Bugün</span>' : s.gun === 1 ? '<span class="mh-sari">Yarın</span>' : _ayAdi(p.date) + ' · ' + s.gun + ' gün');
-  return '<button class="mh-satir" data-key="' + esc(_rowKey(p)) + '" data-ay="' + mk + '">'
+  const pid = p.personId && (window.persons || []).some(x => x.id === p.personId) ? p.personId : '';
+  return '<button class="mh-satir" data-key="' + esc(_rowKey(p)) + '" data-ay="' + mk + '" data-pid="' + esc(pid) + '">'
     + '<span class="mh-avatar' + (p._cid ? ' kredi' : '') + '">' + esc(_bas(p.name)) + '</span>'
-    + '<span class="mh-orta"><span class="mh-ad">' + esc(p.name || '') + '</span>'
+    + '<span class="mh-orta"><span class="mh-ad">' + esc((pid && (window.persons.find(x => x.id === pid) || {}).name) || p.name || '') + '</span>'
     + '<span class="mh-alt">' + esc(_etiket(p)) + (_etiket(p) ? ' · ' : '') + alt + '</span></span>'
     + '<span class="mh-sag"><span class="mh-tutar' + (tur === 'gec' ? ' kirmizi' : '') + '">' + window.fmt(s.kalan) + '</span>'
     + (s.kismi ? '<span class="mh-kismi">kısmi</span>' : '') + '</span>'
@@ -189,7 +190,11 @@ document.addEventListener('click', e => {
     return;
   }
   const s = e.target.closest('#MOB_HOME .mh-satir');
-  if (s) window.openCell(encodeURIComponent(s.dataset.key), s.dataset.ay);
+  if (s) {
+    // v8.236: avatar/isim -> cari kart; tutar tarafı -> o ayın detayı (öde/ertele)
+    if (s.dataset.pid && e.target.closest('.mh-avatar, .mh-ad') && window.openCari) { window.openCari(s.dataset.pid); return; }
+    window.openCell(encodeURIComponent(s.dataset.key), s.dataset.ay);
+  }
 });
 
 // Alt menüde aktif sekme

@@ -424,13 +424,14 @@ function saveCariAy() {
 }
 
 // ── ERTELE UI ──────────────────────────────────────────────────────────────
-function openCariErtele() {
-  const rk = $('CA_REF').value;
+function openCariErtele(refArg) {
+  const rk = refArg || $('CA_REF').value;
   const h = hedefBul(refParse(rk), window.pays, window.creds);
   if (!h) { alert('Kayıt bulunamadı.'); return; }
   const o = h.obj;
   if ((o.status || 'pending') === 'paid') { alert('Ödenmiş kalem ertelenemez.'); return; }
   ModalManager.close('CARI_AY');
+  if (window.closeDV) window.closeDV();
   $('CER_REF').value = rk;
   // Varsayılan: bugünden sonraki ilk ay, kalemin kendi günüyle (geçmişte kalmış taksit öne gelir)
   const gun = Number(String(o.date).slice(8, 10)) || 1;
@@ -444,10 +445,12 @@ function openCariErtele() {
   ModalManager.open('CARI_ERT');
 }
 
+// Aynı borcun kalemleri — cari kart açık olmasa da (plan hücresinden erteleme) doğrudan veriden
 function _erteleKalemleri(h) {
-  const person = _kisi();
-  const y = person && _ys(person).find(x => x.key === (h.cred ? 'cred_' + h.cred.id : (h.obj.groupId ? 'g_' + h.obj.groupId : 'pay_' + String(Math.floor(Number(h.obj.id))))));
-  return y ? y.kalemler.map(k => ({ key: refKey(k.ref), obj: k.h.obj, h: k.h })) : [];
+  if (h.cred) return (h.cred.pays || []).map(t => ({ key: refKey({ k: 'cred', cid: h.cred.id, ii: t.idx }), obj: t }));
+  const grp = h.obj.groupId ? 'g_' + h.obj.groupId : 'pay_' + String(Math.floor(Number(h.obj.id)));
+  return (window.pays || []).filter(p => (p.groupId ? 'g_' + p.groupId : 'pay_' + String(Math.floor(Number(p.id)))) === grp)
+    .map(p => ({ key: refKey({ k: 'pay', id: p.id }), obj: p }));
 }
 
 function cerOnizle() {
@@ -468,11 +471,15 @@ function saveCariErtele() {
   const kalemler = _erteleKalemleri(h);
   let plan;
   try { plan = ertelePlani(kalemler, rk, $('CER_DATE').value, $('CER_KAPSAM').value); } catch (e) { alert(e.message); return; }
-  const y = _yBul(h.cred ? 'cred_' + h.cred.id : 'g_' + h.obj.groupId);
+  const pid = h.cred ? h.cred.personId : h.obj.personId;
+  const kisiAd = ((window.persons || []).find(p => p.id === pid) || {}).name || (h.cred ? h.cred.name : h.obj.name) || '';
+  const etiket = h.cred ? (h.cred.desc || 'Kredi') : (h.obj.desc || h.obj.category || '');
+  const ctx = { personId: pid || undefined };
+  if (h.cred) ctx.credId = h.cred.id; else if (h.obj.groupId) ctx.groupId = h.obj.groupId;
   window.Store.tx(() => {
     plan.forEach(p => { const k = kalemler.find(x => x.key === p.key); if (k) window.Store.mutateItem(k.obj, { date: p.yeni }); });
     if (h.cred) h.cred.pays.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.idx - b.idx);
-    _log('plan_edit', 'Ertelendi', _kisi().name + ' (' + (y ? y.etiket : '') + ') · ' + _tarihUzun(plan[0].eski) + ' → ' + _tarihUzun(plan[0].yeni) + (plan.length > 1 ? ' (+' + (plan.length - 1) + ' sonraki kalem aynı farkla)' : ''), y);
+    window.addLog('plan_edit', 'Ertelendi', kisiAd + (etiket ? ' (' + etiket + ')' : '') + ' · ' + _tarihUzun(plan[0].eski) + ' → ' + _tarihUzun(plan[0].yeni) + (plan.length > 1 ? ' (+' + (plan.length - 1) + ' sonraki kalem aynı farkla)' : ''), 2, ctx);
   });
   ModalManager.close('CARI_ERT');
 }

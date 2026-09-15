@@ -606,3 +606,6 @@ body.plan-fs-on #PLANWRAP::before {
   .brl-liste{max-height:none}
   .cari-kisi-btn{flex-wrap:wrap;justify-content:flex-end}
 }
+/* v8.236: plan hücre detayında Cari Kart / Ertele hızlı düğmeleri */
+.dhizli{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
+.dhizli .dact{flex:1 1 auto;min-height:40px}

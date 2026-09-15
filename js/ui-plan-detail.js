@@ -113,7 +113,12 @@ function openCell(keyEnc,month) {
   const s=c.status||'pending',over=s!=='paid'&&c.items.some(x=>window.isOD(x));
   const orig=c.items.find(x=>x.currency&&x.currency!=='TRY');
   const pid=mx[key]?._personId;
-  let h=`<div class="dtitle">${window.esc(name)}${pid?` <button class="dact da-edit" style="flex:none;padding:3px 9px;font-size:11px;vertical-align:middle" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari kart</button>`:''}</div><div class="dsub">${lbl}</div>`;
+  let h=`<div class="dtitle">${window.esc(name)}</div><div class="dsub">${lbl}</div>`;
+  // v8.236: plandan kişinin cari kartına + erteleme (telefonda da görünür)
+  const acikKalemler=c.items.filter(p=>kalemOzet(p,window.rates).kalan>0);
+  h+=`<div class="dhizli">${pid&&(window.persons||[]).some(p=>p.id===pid)?`<button class="dact da-edit" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari Kartı Aç</button>`:''}`
+    +acikKalemler.map(p=>{const r=p._cid?('c|'+p._cid+'|'+p._ii):('p|'+p.id);return `<button class="dact da-part" onclick="openCariErtele('${window.esc(r)}')">⏭ Ertele${acikKalemler.length>1?' · '+window.esc(window.fmtA(kalemOzet(p,window.rates).kalan,kalemOzet(p,window.rates).para)):''}</button>`;}).join('')
+    +`</div>`;
   h+=`<div class="drow"><span class="dk">Tutar</span><span class="dv">${window.fmt(c.try)}${orig?` <span style="font-size:11px;opacity:.65">${window.fmtA(orig.amount,orig.currency)}</span>`:''}</span></div>`;
   h+=`<div class="drow"><span class="dk">Durum</span><span class="${sCls(s,over)}" style="font-weight:600">${sLbl(s,over)}</span></div>`;
   if(c.odenen>0.5) h+=`<div class="drow"><span class="dk">Ödenen</span><span class="dv" style="color:var(--ok)">${window.fmt(c.odenen)}</span></div>`;
