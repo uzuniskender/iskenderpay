@@ -155,17 +155,20 @@ function chSort(v) { window.sortMode = v; render(); }
 async function chAhead(v) { localStorage.setItem('v5-ahead', v); render(); }
 
 // ── MİGRASYON (kredi tarihleri) ──────────────────────────────────────────────
+// v8.235: YALNIZ tarihi bozuk/boş taksiti onarır. Eskiden her açılışta TÜM taksit tarihlerini
+// başlangıçtan sıra numarasıyla yeniden yazıyordu: ertelenen taksit bir sonraki açılışta sessizce
+// eski tarihine dönüyordu ("veri kaymış" hissinin bir kaynağı).
 async function migrateCredDates() {
   (window.creds || []).forEach(c => {
     if (!c.start || !c.pays || !c.pays.length) return;
     const [_sy,_sm,_sd] = c.start.split('-').map(Number);
     const startDay=_sd, startMo=_sm-1, startYr=_sy;
     c.pays.forEach((p,i) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(p.date || ''))) return;
       const totalMo = startMo + i;
       const yr = startYr + Math.floor(totalMo/12), mo = totalMo%12;
       const lastDay = new Date(yr, mo+1, 0).getDate();
-      const correct = toLocalISO(yr, mo, Math.min(startDay, lastDay));
-      if (p.date !== correct) p.date = correct;
+      p.date = toLocalISO(yr, mo, Math.min(startDay, lastDay));
     });
   });
 }

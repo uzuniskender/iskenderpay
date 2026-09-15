@@ -128,6 +128,31 @@ export function ayPatch(h, amount, date, rates) {
   return Object.assign(patch, p2);
 }
 
+// ── ERTELE (v8.235) — saf ─────────────────────────────────────────────────
+// kalemler: [{ key, obj }] (aynı borcun kalemleri). secKey: ertelenen kalemin anahtarı.
+// kapsam 'tek': yalnız o kalem yeniTarih'e gider.
+// kapsam 'sonraki': o kalem yeniTarih'e, ondan SONRAKİ ödenmemiş kalemler aynı ay farkı kadar ileri
+// (her biri kendi ayın gününü korur). Ödenmiş kaleme ve tutarlara dokunulmaz.
+// Dönüş: [{ key, eski, yeni }] ya da hata fırlatır.
+export function ertelePlani(kalemler, secKey, yeniTarih, kapsam) {
+  const sec = (kalemler || []).find(k => k.key === secKey);
+  if (!sec) throw new Error('Kalem bulunamadı.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(yeniTarih || ''))) throw new Error('Yeni tarih seçin.');
+  if ((sec.obj.status || 'pending') === 'paid') throw new Error('Ödenmiş kalem ertelenemez.');
+  if (String(yeniTarih) <= String(sec.obj.date)) throw new Error('Yeni tarih mevcut tarihten (' + sec.obj.date + ') sonra olmalı.');
+  const fark = ayFarki(sec.obj.date, yeniTarih);
+  const out = [{ key: sec.key, eski: sec.obj.date, yeni: yeniTarih }];
+  if (kapsam === 'sonraki' && fark > 0) {
+    kalemler.forEach(k => {
+      if (k.key === sec.key) return;
+      if ((k.obj.status || 'pending') === 'paid') return;
+      if (String(k.obj.date) <= String(sec.obj.date)) return;
+      out.push({ key: k.key, eski: k.obj.date, yeni: ayTarihi(k.obj.date, fark) });
+    });
+  }
+  return out;
+}
+
 // ── UI ─────────────────────────────────────────────────────────────────────
 
 let _pid = null;
@@ -370,6 +395,7 @@ function openCariAy(rk) {
   const silinebilir = !h.cred && !(pd > 0) && (o.status || 'pending') !== 'paid';
   $('CA_DEL').style.display = silinebilir ? '' : 'none';
   $('CA_ODE').style.display = (o.status || 'pending') === 'paid' ? 'none' : '';
+  if ($('CA_ERT')) $('CA_ERT').style.display = (o.status || 'pending') === 'paid' ? 'none' : '';
   ModalManager.open('CARI_AY');
 }
 
@@ -395,6 +421,60 @@ function saveCariAy() {
       _kisi().name + ' (' + (y ? y.etiket : '') + ') · ' + ne.join(' · '), y);
   });
   ModalManager.close('CARI_AY');
+}
+
+// ── ERTELE UI ──────────────────────────────────────────────────────────────
+function openCariErtele() {
+  const rk = $('CA_REF').value;
+  const h = hedefBul(refParse(rk), window.pays, window.creds);
+  if (!h) { alert('Kayıt bulunamadı.'); return; }
+  const o = h.obj;
+  if ((o.status || 'pending') === 'paid') { alert('Ödenmiş kalem ertelenemez.'); return; }
+  ModalManager.close('CARI_AY');
+  $('CER_REF').value = rk;
+  // Varsayılan: bugünden sonraki ilk ay, kalemin kendi günüyle (geçmişte kalmış taksit öne gelir)
+  const gun = Number(String(o.date).slice(8, 10)) || 1;
+  const b = new Date();
+  let aday = ayTarihi(toLocalISO(b.getFullYear(), b.getMonth(), 1).slice(0, 8) + String(gun).padStart(2, '0'), 1);
+  if (aday <= String(o.date)) aday = ayTarihi(o.date, 1);
+  $('CER_DATE').value = aday;
+  $('CER_KAPSAM').value = h.cred ? 'sonraki' : 'tek';
+  $('CER_INFO').textContent = (h.cred ? o.idx + '. taksit' : 'Ay') + ' · şu an ' + _tarihUzun(o.date) + ' · ' + window.fmtA(o.amount, h.cred ? 'TRY' : (o.currency || 'TRY'));
+  cerOnizle();
+  ModalManager.open('CARI_ERT');
+}
+
+function _erteleKalemleri(h) {
+  const person = _kisi();
+  const y = person && _ys(person).find(x => x.key === (h.cred ? 'cred_' + h.cred.id : (h.obj.groupId ? 'g_' + h.obj.groupId : 'pay_' + String(Math.floor(Number(h.obj.id))))));
+  return y ? y.kalemler.map(k => ({ key: refKey(k.ref), obj: k.h.obj, h: k.h })) : [];
+}
+
+function cerOnizle() {
+  const rk = $('CER_REF').value;
+  const h = hedefBul(refParse(rk), window.pays, window.creds);
+  if (!h) return;
+  try {
+    const plan = ertelePlani(_erteleKalemleri(h), rk, $('CER_DATE').value, $('CER_KAPSAM').value);
+    $('CER_PREV').innerHTML = plan.length + ' kalem: ' + plan.slice(0, 4).map(p => _tarihUzun(p.eski) + ' → <b>' + _tarihUzun(p.yeni) + '</b>').join(' · ')
+      + (plan.length > 4 ? ' …' : '') + '<br><span style="color:var(--muted)">Tutarlar ve toplam borç değişmez.</span>';
+  } catch (e) { $('CER_PREV').innerHTML = '<span style="color:var(--danger)">' + window.esc(e.message) + '</span>'; }
+}
+
+function saveCariErtele() {
+  const rk = $('CER_REF').value;
+  const h = hedefBul(refParse(rk), window.pays, window.creds);
+  if (!h) { alert('Kayıt bulunamadı.'); return; }
+  const kalemler = _erteleKalemleri(h);
+  let plan;
+  try { plan = ertelePlani(kalemler, rk, $('CER_DATE').value, $('CER_KAPSAM').value); } catch (e) { alert(e.message); return; }
+  const y = _yBul(h.cred ? 'cred_' + h.cred.id : 'g_' + h.obj.groupId);
+  window.Store.tx(() => {
+    plan.forEach(p => { const k = kalemler.find(x => x.key === p.key); if (k) window.Store.mutateItem(k.obj, { date: p.yeni }); });
+    if (h.cred) h.cred.pays.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.idx - b.idx);
+    _log('plan_edit', 'Ertelendi', _kisi().name + ' (' + (y ? y.etiket : '') + ') · ' + _tarihUzun(plan[0].eski) + ' → ' + _tarihUzun(plan[0].yeni) + (plan.length > 1 ? ' (+' + (plan.length - 1) + ' sonraki kalem aynı farkla)' : ''), y);
+  });
+  ModalManager.close('CARI_ERT');
 }
 
 function odeCariAy() {
@@ -555,6 +635,9 @@ window.addEventListener('store:change', () => { if (_pid && _acik()) _render(); 
 window.openCari     = openCari;
 window.saveCariAy   = saveCariAy;
 window.odeCariAy    = odeCariAy;
+window.openCariErtele = openCariErtele;
+window.cerOnizle      = cerOnizle;
+window.saveCariErtele = saveCariErtele;
 window.silCariAy    = silCariAy;
 window.saveCariGrp  = saveCariGrp;
 window.saveCariEk   = saveCariEk;

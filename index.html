@@ -524,8 +524,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1298';
-var APP_BUILD   = '20260915-64e0646';
+var APP_VERSION = 'v8.1300';
+var APP_BUILD   = '20260915-7f9fe42';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -724,9 +724,28 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="brow" style="flex-wrap:wrap">
       <button class="btn bc" data-modal-close="CARI_AY">İptal</button>
       <button class="btn" id="CA_DEL" onclick="silCariAy()" style="background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)">Bu Ayı Sil</button>
+      <button class="btn" id="CA_ERT" onclick="openCariErtele()" style="background:rgba(96,165,250,.14);color:var(--blue);border:1px solid rgba(96,165,250,.3)">⏭ Ertele</button>
       <button class="btn" id="CA_ODE" onclick="odeCariAy()" style="background:rgba(74,222,128,.15);color:var(--ok);border:1px solid rgba(74,222,128,.3)">💰 Öde</button>
       <button class="btn bs" onclick="saveCariAy()">Kaydet</button>
     </div>
+  </div>
+</div>
+
+<!-- CARİ KART: ERTELE (v8.235) -->
+<div class="mov" id="CARI_ERT">
+  <div class="modal">
+    <div class="mhdl"></div>
+    <h2>Ödemeyi <span>Ertele</span></h2>
+    <input type="hidden" id="CER_REF">
+    <div id="CER_INFO" style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.4"></div>
+    <div class="frow">
+      <div class="fg"><label class="fl">Yeni Tarih</label><input class="fi" id="CER_DATE" type="date" oninput="cerOnizle()"></div>
+      <div class="fg"><label class="fl">Kapsam</label>
+        <select class="fi" id="CER_KAPSAM" onchange="cerOnizle()"><option value="tek">Yalnız bu ay/taksit</option><option value="sonraki">Bu ve sonrakiler (hepsi kayar)</option></select>
+      </div>
+    </div>
+    <div id="CER_PREV" style="font-size:12px;margin:0 2px 10px;line-height:1.5"></div>
+    <div class="brow"><button class="btn bc" data-modal-close="CARI_ERT">Vazgeç</button><button class="btn bs" onclick="saveCariErtele()">Ertele</button></div>
   </div>
 </div>
 
