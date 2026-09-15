@@ -6,6 +6,7 @@
 // window.closeDV / window.openCell (detail.js).
 
 import { toTRY } from './util.js';
+import { kalemOzet, odemePatch, tamOdePatch } from './para.js';
 
 // ── HÜCRE CRUD ──────────────────────────────
 function addToMonth(keyEnc,month) {
@@ -49,23 +50,35 @@ function _findPaidIdx(p) {
   return liste.findIndex(x => x._cid == null && String(x.id) === String(p.id));
 }
 
+// Plan kaleminin (getAllItems elemanı) SAKLANAN nesnesi: pay objesi veya kredi taksiti
+function _saklanan(p) {
+  if (p._cid) { const c = window.findCredById(p._cid); return c ? c.pays.find(x => x.idx === p._ii) : null; }
+  return window.findPayById(p.id);
+}
+
+// v8.234: tutar hesabı js/para.js'ten. Dövizli kalemde ödenen KALEMİN PARASINDA yazılır
+// (38 gr altın ödendiyse paid=38 gr); defter (paidItems) ise o günün TL karşılığını tutar.
 function markOk(keyEnc,month) {
   const key=decodeURIComponent(keyEnc);
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
   items.forEach(p=>{
-    let _onceki=0, _tam=toTRY(p.amount,p.currency||'TRY',window.rates);
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){_onceki=i.paid||0;_tam=i.amount;i.status='paid';i.paid=i.amount;}}}
-    else{const orig=window.findPayById(p.id);if(orig){_onceki=orig.paid||0;orig.status='paid';orig.paid=toTRY(orig.amount,orig.currency||'TRY',window.rates);_tam=orig.paid;}}
+    const obj=_saklanan(p); if(!obj) return;
+    const oncesi=kalemOzet(p._cid?{...obj,_cid:p._cid}:obj, window.rates);
+    if(oncesi.kalan===0) return;                       // zaten ödenmiş kalem: ikinci kez yazma
+    const eklenen=oncesi.tam-oncesi.odenen;             // kalemin parasında
+    const eklenenTL=oncesi.kalanTL;
+    Object.assign(obj, tamOdePatch(p._cid?{...obj,_cid:p._cid}:obj, window.rates));
+    const tamTL=oncesi.tamTL;
     // Kismi odenmis kalem tamamlaniyorsa mevcut defter kaydini tamamla (ikinci kayit acma).
-    const _pi=_onceki>0?_findPaidIdx(p):-1;
+    const _pi=oncesi.odenen>0?_findPaidIdx(p):-1;
     let _paidId;
-    if(_pi>=0){const ex=window.paidItems[_pi];_paidId=ex.paidId;window.Store.mutateItem(ex,{status:'paid',paid:_tam});}
-    else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:'paid', paid:toTRY(p.amount,p.currency||'TRY',window.rates), paidAt:new Date().toISOString()});}
+    if(_pi>=0){const ex=window.paidItems[_pi];_paidId=ex.paidId;window.Store.mutateItem(ex,{status:'paid',paid:(ex.paid||0)+eklenenTL});}
+    else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:'paid', paid:tamTL, paidAt:new Date().toISOString()});}
     // Hareket logu: kaleme bu islemle eklenen tutar (kisi kartinda duzenlenebilir)
     try{
-      if(window.Hareket) window.Hareket.planOdemesiLogla(p, _tam-_onceki, _paidId, false);
-      else window.addLog('paid','Ödeme yapıldı',(p.name||'')+' · ₺'+Number(toTRY(p.amount,p.currency||'TRY',window.rates)).toLocaleString('tr-TR',{maximumFractionDigits:0}),1,{groupId:p.groupId, personId:p.personId});
+      if(window.Hareket) window.Hareket.planOdemesiLogla(p, eklenen, _paidId, false);
+      else window.addLog('paid','Ödeme yapıldı',(p.name||'')+' · '+window.fmtA(eklenen,oncesi.para),1,{groupId:p.groupId, personId:p.personId});
     }catch(e){}
   });
   window.Store.touch(); window.closeDV();
@@ -76,8 +89,8 @@ function undoCell(keyEnc,month) {
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
   items.forEach(p=>{
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.status='pending';i.paid=0;}}}
-    else{const orig=window.findPayById(p.id);if(orig){orig.status='pending';orig.paid=0;}}
+    const obj=_saklanan(p);
+    if(obj){obj.status='pending';obj.paid=0;delete obj.odenenPara;}
     const pidx=_findPaidIdx(p);
     if(pidx>=0) window.Store.spliceAt('paidItems', pidx, 1);
     if(window.Hareket) window.Hareket.kalemHareketleriniKapat(p);
@@ -86,22 +99,28 @@ function undoCell(keyEnc,month) {
   window.Store.touch(); window.closeDV();
 }
 
+// v8.234: kısmi ödeme TEK kaleme yazılır ve kalemin parasındadır (altında gram, euroda €).
+// Eskiden hücredeki HER kaleme aynı tutar ekleniyordu: iki kalemli ayda 5.000 girince 10.000 düşüyordu.
 function doPartial() {
   const amt=parseFloat(document.getElementById('KA').value)||0;
-  if(!amt){alert('Tutar girin');return;}
+  if(!(amt>0)){alert('Tutar girin');return;}
   const key=decodeURIComponent(window.partialCtx.keyEnc), month=window.partialCtx.month;
   const all=window.getAllItems(),mx=window.buildMx(all);
-  const items=(mx[key]?.[month]?.items)||[];
-  items.forEach(p=>{
-    let _yeniStatus='partial';
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.paid=(i.paid||0)+amt;i.status=i.paid>=i.amount?'paid':'partial';_yeniStatus=i.status;}}}
-    else{const orig=window.findPayById(p.id);if(orig){orig.paid=(orig.paid||0)+amt;orig.status=orig.paid>=toTRY(orig.amount,orig.currency||'TRY',window.rates)?'paid':'partial';_yeniStatus=orig.status;}}
-    const _pi=_findPaidIdx(p); const existing=_pi>=0?window.paidItems[_pi]:null;
-    let _paidId;
-    if(existing){_paidId=existing.paidId;existing.paid=(existing.paid||0)+amt;existing.status=existing.paid>=toTRY(p.amount,p.currency||'TRY',window.rates)?'paid':'partial';}
-    else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:'partial', paid:amt, paidAt:new Date().toISOString()});}
-    try{if(window.Hareket) window.Hareket.planOdemesiLogla(p, amt, _paidId, _yeniStatus!=='paid');}catch(e){}
-  });
+  const items=((mx[key]?.[month]?.items)||[]).filter(p=>kalemOzet(p,window.rates).kalan>0);
+  const secim=document.getElementById('KA_ITEM');
+  const p=items.length===1?items[0]:items.find(x=>String(x._cid?('c|'+x._cid+'|'+x._ii):('p|'+x.id))===(secim&&secim.value));
+  if(!p){alert('Hangi kaleme ödeme yazılacağını seçin.');return;}
+  const obj=_saklanan(p); if(!obj) return;
+  const oncesi=kalemOzet(p._cid?{...obj,_cid:p._cid}:obj, window.rates);
+  if(amt>oncesi.kalan+(oncesi.para==='TRY'?0.5:0.005)){alert('Tutar bu kalemin kalanından ('+window.fmtA(oncesi.kalan,oncesi.para)+') büyük olamaz.');return;}
+  const patch=odemePatch(p._cid?{...obj,_cid:p._cid}:obj, amt, window.rates);
+  Object.assign(obj, patch);
+  const amtTL=amt*(oncesi.para==='TRY'?1:(window.rates[oncesi.para]||0));
+  const _pi=_findPaidIdx(p); const existing=_pi>=0?window.paidItems[_pi]:null;
+  let _paidId;
+  if(existing){_paidId=existing.paidId;existing.paid=(existing.paid||0)+amtTL;existing.status=patch.status;}
+  else{_paidId='pi_'+Date.now()+'_'+Math.random();window.Store.push('paidItems', {...p, paidId:_paidId, status:patch.status, paid:amtTL, paidAt:new Date().toISOString()});}
+  try{if(window.Hareket) window.Hareket.planOdemesiLogla(p, amt, _paidId, patch.status!=='paid');}catch(e){}
   window.Store.touch(); window.closeMov('KM');
 }
 
@@ -111,6 +130,8 @@ function saveCellAmt(keyEnc,month) {
   const key=decodeURIComponent(keyEnc);
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
+  // v8.234: hücrede birden çok kalem varsa girilen tutar her birine yazılıp toplamı katlıyordu.
+  if(items.length>1){alert('Bu ayda '+items.length+' ayrı kalem var. Tutarı tek tek değiştirmek için kişinin cari kartında o ayı aç.');return;}
   items.forEach(p=>{
     if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i)i.amount=v;}}
     else{const orig=window.findPayById(p.id);if(orig)orig.amount=v;}
@@ -123,8 +144,8 @@ function resetPartial(keyEnc,month) {
   const all=window.getAllItems(),mx=window.buildMx(all);
   const items=(mx[key]?.[month]?.items)||[];
   items.forEach(p=>{
-    if(p._cid){const c=window.findCredById(p._cid);if(c){const i=c.pays.find(x=>x.idx===p._ii);if(i){i.status='pending';i.paid=0;}}}
-    else{const orig=window.findPayById(p.id);if(orig){orig.status='pending';orig.paid=0;}}
+    const obj=_saklanan(p);
+    if(obj){obj.status='pending';obj.paid=0;delete obj.odenenPara;}
     const pidx=_findPaidIdx(p);
     if(pidx>=0) window.Store.spliceAt('paidItems', pidx, 1);
     if(window.Hareket) window.Hareket.kalemHareketleriniKapat(p);

@@ -6,6 +6,7 @@
 // window.editCred, window.editPay, window.updLP (ui-pay.js).
 
 import { sCls, sLbl } from './util.js';
+import { kalemOzet } from './para.js';
 
 // ── DETAIL PANEL (DV) ───────────────────────
 function openRow(keyEnc) {
@@ -28,7 +29,7 @@ function openRow(keyEnc) {
     h+=`<div class="drow">
       <span class="dk">${lbl}</span>
       <span style="display:flex;align-items:center;gap:8px">
-        <span class="${sCls(s,over)}" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600">${window.fmt(c.try)}</span>
+        <span class="${sCls(s,over)}" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:600">${window.fmt(s==='paid'?c.try:c.kalan)}</span>
         <span class="${sCls(s,over)}" style="font-size:11px">${sLbl(s,over)}</span>
         ${s!=='paid'?`<button class="dact da-ok" style="padding:3px 8px;font-size:11px;flex:none" onclick="markOk('${encodeURIComponent(key)}','${m}')">✓</button>`:''}
         ${s==='partial'?`<button class="dact da-part" style="padding:3px 8px;font-size:11px;flex:none" onclick="resetPartial('${encodeURIComponent(key)}','${m}')">↺</button>`:''}
@@ -111,10 +112,12 @@ function openCell(keyEnc,month) {
   const lbl=new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'long',year:'numeric'});
   const s=c.status||'pending',over=s!=='paid'&&c.items.some(x=>window.isOD(x));
   const orig=c.items.find(x=>x.currency&&x.currency!=='TRY');
-  let h=`<div class="dtitle">${name}</div><div class="dsub">${lbl}</div>`;
+  const pid=mx[key]?._personId;
+  let h=`<div class="dtitle">${window.esc(name)}${pid?` <button class="dact da-edit" style="flex:none;padding:3px 9px;font-size:11px;vertical-align:middle" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari kart</button>`:''}</div><div class="dsub">${lbl}</div>`;
   h+=`<div class="drow"><span class="dk">Tutar</span><span class="dv">${window.fmt(c.try)}${orig?` <span style="font-size:11px;opacity:.65">${window.fmtA(orig.amount,orig.currency)}</span>`:''}</span></div>`;
   h+=`<div class="drow"><span class="dk">Durum</span><span class="${sCls(s,over)}" style="font-weight:600">${sLbl(s,over)}</span></div>`;
-  if(s==='partial') h+=`<div class="drow"><span class="dk">Ödenen</span><span class="dv" style="color:var(--ora)">${window.fmt(c.items.reduce((a,p)=>a+(p.paid||0),0))}</span></div>`;
+  if(c.odenen>0.5) h+=`<div class="drow"><span class="dk">Ödenen</span><span class="dv" style="color:var(--ok)">${window.fmt(c.odenen)}</span></div>`;
+  if(s!=='paid') h+=`<div class="drow"><span class="dk">Kalan</span><span class="dv" style="color:var(--ora)">${window.fmt(c.kalan)}${c.items.filter(p=>(p.currency||'TRY')!=='TRY'&&!p._cid).map(p=>{const o=kalemOzet(p,window.rates);return o.kalan>0?` <span style="font-size:11px;opacity:.65">${window.fmtA(o.kalan,o.para)}</span>`:''}).join('')}</span></div>`;
   c.items.forEach(p=>{if(p.date)h+=`<div class="drow"><span class="dk">Tarih</span><span class="dv" style="font-family:'Inter',sans-serif">${window.fmtD(p.date)}</span></div>`;});
   const isCreditCell = c.items.length > 0 && c.items.every(x => x._cid);
   const creditAmt = isCreditCell ? (()=>{ const cr=window.findCredById(c.items[0]._cid); const ti=cr&&cr.pays.find(x=>x.idx===c.items[0]._ii); return ti?Math.round(ti.amount):Math.round(c.try); })() : null;
@@ -228,12 +231,26 @@ function openEmptyCell(keyEnc,month) {
   setTimeout(()=>document.getElementById('ECA')?.focus(),100);
 }
 
+// v8.234: kısmi ödeme tek kaleme ve kalemin parasında girilir. Ayda birden çok açık kalem varsa seçtirir.
 function openKM(keyEnc,month) {
   window.partialCtx = {keyEnc, month};
   const key=decodeURIComponent(keyEnc),all=window.getAllItems(),mx=window.buildMx(all);
   const c=mx[key]?.[month];
+  const acik=(c?c.items:[]).map(p=>({p,oz:kalemOzet(p,window.rates)})).filter(x=>x.oz.kalan>0);
+  const refOf=p=>p._cid?('c|'+p._cid+'|'+p._ii):('p|'+p.id);
+  const sel=document.getElementById('KA_ITEM');
+  const guncelle=()=>{
+    const x=acik.length===1?acik[0]:acik.find(a=>refOf(a.p)===sel.value);
+    if(!x){document.getElementById('KI').textContent='';return;}
+    const birim=x.oz.para==='TRY'?'₺':x.oz.para==='EUR'?'€':'gram';
+    document.getElementById('KA_LBL').textContent='Ödenen Tutar ('+birim+')';
+    document.getElementById('KI').textContent='Kalan '+window.fmtA(x.oz.kalan,x.oz.para)+(x.oz.para!=='TRY'?' ≈ '+window.fmt(x.oz.kalanTL):'')+' · toplam '+window.fmtA(x.oz.tam,x.oz.para);
+  };
+  sel.innerHTML=acik.map(x=>`<option value="${window.esc(refOf(x.p))}">${window.esc(window.fmtD(x.p.date)+' · '+window.fmtA(x.oz.kalan,x.oz.para)+' kalan')}</option>`).join('');
+  document.getElementById('KA_ITEM_WRAP').style.display=acik.length>1?'':'none';
+  sel.onchange=guncelle;
   document.getElementById('KA').value='';
-  document.getElementById('KI').textContent=c?window.fmt(c.try)+' toplam':'';
+  guncelle();
   closeDV();
   ModalManager.open('KM');
 }

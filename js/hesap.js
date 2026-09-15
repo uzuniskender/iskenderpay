@@ -14,6 +14,7 @@
 //   Hesap._displayNames(mx, keys?)    -> { rawKey: displayName } haritasi
 
 import { todayMidnight, toTRY, toLocalISO } from './util.js';
+import { kalemOzet } from './para.js';
 
 function _all() {
   if (typeof window.getAllItems === 'function') return window.getAllItems();
@@ -109,9 +110,12 @@ function _displayNames(mx, keys) {
 // hesaba katar. currency verilirse toTRY ile cevrilir; cred taksitleri amount
 // zaten TRY oldugundan currency'siz cagrilir. toplamOzeti / krediler /
 // _buildPersonSummary HEPSI bunu kullanir -> formul tek yerde, sapamaz.
+//
+// v8.234: ASIL KAYNAK artık js/para.js#kalemOzet (ödenen kalemin kendi parasında). Bu fonksiyon
+// yalnız geriye uyum için durur; yeni kod kalemOzet kullanır.
 function kalan(amount, paid, currency) {
-  const t = currency ? toTRY(amount, currency, window.rates) : (amount || 0);
-  return Math.max(0, t - (paid || 0));
+  if (currency && currency !== 'TRY') return kalemOzet({ amount, paid, currency, status: 'partial' }, window.rates).kalanTL;
+  return Math.max(0, (amount || 0) - (paid || 0));
 }
 
 // ── KREDİ YAPILANDIRMA — saf çekirdek (v8.208) ─────────────────────────────
@@ -165,28 +169,32 @@ export const Hesap = {
       const d = window.parseLocalDate(p.date);
       return d.getFullYear() === rY && d.getMonth() === rM;
     });
+    // v8.234: kısmi ödeme artık ikiye bölünür — ödenen kısmı "Ödendi"de, kalanı "Bekliyor/Gecikmiş"te.
+    // (Eskiden kısmi kalemin TAMAMI bekliyor sayılıyordu; tablo ile kart farklı rakam gösteriyordu.)
     let tot = 0, ok = 0, bek = 0, gec = 0, okN = 0, bekN = 0, gecN = 0;
     buAy.forEach(p => {
-      const t = toTRY(p.amount, p.currency || 'TRY', window.rates);
-      tot += t;
-      const s = p.status || 'pending';
-      if (s === 'paid')        { ok += t; okN++; }
-      else if (window.isOD(p)) { gec += t; gecN++; }
-      else                     { bek += t; bekN++; }
+      const oz = kalemOzet(p, window.rates);
+      tot += oz.tamTL;
+      ok += oz.odenenTL;
+      if (oz.kalan === 0)      { okN++; }
+      else if (window.isOD(p)) { gec += oz.kalanTL; gecN++; }
+      else                     { bek += oz.kalanTL; bekN++; }
     });
     return { tot, ok, bek, gec, okN, bekN, gecN, itemCount: buAy.length };
   },
 
+  // Tarihi geçmiş ve ödenmemiş TÜM kalemler (yalnız bu ay değil) — başlık/rozet sayacı
+  gecikmisSayisi(all) {
+    return (all || _all()).filter(p => window.isOD(p) && kalemOzet(p, window.rates).kalan > 0).length;
+  },
+
   // ── Tum bekleyen borc ────────────────────────────────────────────────────
-  // pays.paid TRY cinsinden (markOk -> toTRY yapiyor); cred.pays.amount zaten TRY.
   toplamOzeti() {
     const paysBekleyen = (window.pays || [])
-      .filter(p => (p.status || 'pending') !== 'paid')
-      .reduce((s, p) => s + kalan(p.amount, p.paid, p.currency || 'TRY'), 0);
+      .reduce((s, p) => s + kalemOzet(p, window.rates).kalanTL, 0);
     const krediBekleyen = (window.creds || [])
       .reduce((s, c) => s + (c.pays || [])
-        .filter(p => (p.status || 'pending') !== 'paid')
-        .reduce((a, p) => a + kalan(p.amount, p.paid), 0), 0);
+        .reduce((a, p) => a + kalemOzet({ ...p, _cid: c.id }, window.rates).kalanTL, 0), 0);
     return {
       paysBekleyen,
       krediBekleyen,
@@ -208,8 +216,7 @@ export const Hesap = {
       const total = items.length;
       const remaining = total - paid;
       const bekleyen = items
-        .filter(p => (p.status || 'pending') !== 'paid')
-        .reduce((s, p) => s + kalan(p.amount, p.paid), 0);
+        .reduce((s, p) => s + kalemOzet({ ...p, _cid: cr.id }, window.rates).kalanTL, 0);
       const pct = total > 0 ? Math.round((paid / total) * 100) : 0;
       const nextPay = items.find(p => (p.status || 'pending') !== 'paid');
       const done = paid === total;

@@ -14,7 +14,8 @@
 //   • Kredi taksit sayısı/tarihi yalnız "Yapılandır" ile değişir (mevcut güvenli akış).
 
 import { toTRY, toLocalISO } from './util.js';
-import { payKisiye, credKisiye, refKey, refParse, hedefBul, tamTutar, durumHesapla } from './hareket.js';
+import { payKisiye, credKisiye, refKey, refParse, hedefBul, hareketYerel } from './hareket.js';
+import { kalemOzet, odemePatch, paraTopla, paraYazi } from './para.js';
 
 const EPS = 0.5;
 
@@ -36,15 +37,14 @@ export function ayFarki(a, b) {
   return (by - ay) * 12 + (bm - am);
 }
 
-// Kalemin durumu (eski kayıt: status 'paid' ama paid alanı yok -> ödenmiş say)
+// Kalemin durumu — v8.234: tek kaynak js/para.js#kalemOzet.
+//   tam/kalan/odenen = TL karşılığı (sekme ve özet toplamları için)
+//   yerel = kalemin kendi parasında özet (altın gram, euro €)
 function _kalemOzet(h, rates, bugunISO) {
-  const tam = tamTutar(h, rates);
-  const st = h.obj.status || 'pending';
-  const pd = h.obj.paid || 0;
-  const kalan = st === 'paid' ? 0 : Math.max(0, tam - pd);
-  const odenen = st === 'paid' ? (pd > 0 ? pd : tam) : pd;
-  const gecikmis = st !== 'paid' && kalan > EPS && String(h.obj.date) < bugunISO;
-  return { tam, st, kalan, odenen, gecikmis };
+  const yerel = kalemOzet(h.cred ? { ...h.obj, _cid: h.cred.id } : h.obj, rates);
+  const st = yerel.durum;
+  const gecikmis = yerel.kalan > 0 && String(h.obj.date) < bugunISO;
+  return { tam: yerel.tamTL, st, kalan: yerel.kalanTL, odenen: yerel.odenenTL, gecikmis, yerel };
 }
 
 // Kişinin borçları: her ödeme grubu ve her kredi AYRI yükümlülük.
@@ -73,14 +73,15 @@ export function yukumlulukler(person, pays, creds, rates, bugunISO, baseOf) {
       k.oz = _kalemOzet(k.h, rates, bugunISO);
       o.kalan += k.oz.kalan;
       o.odenen += k.oz.odenen;
-      if (k.oz.kalan > EPS) o.acikN++;
+      if (k.oz.yerel.kalan > 0) o.acikN++;
       if (k.oz.gecikmis) { o.gecikmis += k.oz.kalan; o.gecikmisN++; }
     });
+    o.para = paraTopla(y.kalemler.map(k => k.oz.yerel));   // {TRY, EUR, GOLD} kalan, kendi parasında
     y.ozet = o;
   });
   const seen = {};
   // Sıra: gecikmişi olan → açık borç → biten; kendi içinde etiket
-  const oncelik = y => (y.ozet.gecikmisN ? 2 : 0) + (y.ozet.kalan > EPS ? 1 : 0);
+  const oncelik = y => (y.ozet.gecikmisN ? 2 : 0) + (y.ozet.acikN ? 1 : 0);
   out.sort((a, b) => (oncelik(b) - oncelik(a)) || a.etiket.localeCompare(b.etiket, 'tr'));
   out.forEach(y => { const n = (seen[y.etiket] = (seen[y.etiket] || 0) + 1); if (n > 1) y.etiket += ' #' + n; });
   return out;
@@ -120,8 +121,11 @@ export function ayPatch(h, amount, date, rates) {
   const st = h.obj.status || 'pending';
   const pd = h.obj.paid || 0;
   if (st === 'paid' && !(pd > 0)) return patch;
-  const tam = h.cred ? amount : toTRY(amount, h.obj.currency || 'TRY', rates);
-  return Object.assign(patch, durumHesapla(pd, 0, tam));
+  const yeni = { ...h.obj, amount, ...(h.cred ? { _cid: h.cred.id } : {}) };
+  if (!(pd > 0)) return Object.assign(patch, { status: 'pending', paid: 0 });
+  const p2 = odemePatch(yeni, 0, rates);        // ödenen korunur, durum yeni tutara göre
+  delete p2._cid;
+  return Object.assign(patch, p2);
 }
 
 // ── UI ─────────────────────────────────────────────────────────────────────
@@ -174,18 +178,30 @@ function _render() {
   $('PHIST_T').innerHTML = esc(person.name) + ' <span>Cari Kart</span>';
 
   const top = ys.reduce((a, y) => ({ kalan: a.kalan + y.ozet.kalan, gec: a.gec + y.ozet.gecikmis, od: a.od + y.ozet.odenen }), { kalan: 0, gec: 0, od: 0 });
+  // Para birimi bazında kalan (TL + gram + €) — planda TL karşılığı, kartta asıl borç
+  const paraTop = {};
+  ys.forEach(y => Object.entries(y.ozet.para || {}).forEach(([pb, v]) => { paraTop[pb] = (paraTop[pb] || 0) + v; }));
+  const dovizli = Object.keys(paraTop).some(pb => pb !== 'TRY');
+  // v8.234: iletişim bilgisi kişinin ÜSTÜNDE (Rehber kişilere katıldı); eski veri için Rehber yedek
   const r = _rehberKaydi(person);
+  const tel = (person.phones && person.phones.length ? person.phones : (r && r.phones) || []).filter(p => p.num);
+  const iban = person.iban || (r && r.iban) || '';
+  const eposta = person.email || (r && r.email) || '';
   let h = '';
 
   // Kişi bilgisi
   h += '<div class="cari-kisi">'
     + '<div style="flex:1;min-width:0">'
     + (person.desc ? '<div style="font-size:12px;color:var(--muted)">' + esc(person.desc) + '</div>' : '')
-    + (r ? ((r.phones || []).filter(p => p.num).map(p => '<a class="cari-bilgi" href="tel:' + encodeURIComponent(p.num) + '">📞 ' + esc(p.num) + '</a>').join('')
-          + (r.iban ? '<button class="cari-bilgi" data-act="kopya" data-copy="' + esc(r.iban) + '">🏦 ' + esc(r.iban) + ' 📋</button>' : ''))
-         : '<div style="font-size:11px;color:var(--muted)">Rehber\'de telefon/IBAN kaydı yok</div>')
+    + (person.company ? '<div style="font-size:11px;color:var(--muted)">🏢 ' + esc(person.company) + '</div>' : '')
+    + tel.map(p => '<a class="cari-bilgi" href="tel:' + encodeURIComponent(p.num) + '">📞 ' + esc(p.num) + '</a>').join('')
+    + (iban ? '<button class="cari-bilgi" data-act="kopya" data-copy="' + esc(iban) + '">🏦 ' + esc(iban) + ' 📋</button>' : '')
+    + (eposta ? '<a class="cari-bilgi" href="mailto:' + encodeURIComponent(eposta) + '">✉️ ' + esc(eposta) + '</a>' : '')
+    + (!tel.length && !iban && !eposta ? '<div style="font-size:11px;color:var(--muted)">Telefon/IBAN yok — ✏️ Kişi ile ekle</div>' : '')
+    + (person.note ? '<div style="font-size:11px;color:var(--muted);white-space:pre-wrap;margin-top:4px">' + esc(person.note) + '</div>' : '')
     + '</div>'
     + '<div class="cari-kisi-btn"><button class="cari-btn" data-act="kisi">✏️ Kişi</button>'
+    + '<button class="cari-btn" data-act="birlestir" title="Başka kişiyi veya bağsız borcu bu karta al">⇄ Birleştir</button>'
     + '<button class="cari-btn sil" data-act="kisisil" title="Kişiyi arşivle veya sil">🗑</button></div>'
     + '</div>';
 
@@ -194,13 +210,14 @@ function _render() {
     + '<div><div class="cari-lbl">Bekleyen</div><div class="cari-val" style="color:var(--ora)">' + fmt(top.kalan) + '</div></div>'
     + '<div><div class="cari-lbl">Gecikmiş</div><div class="cari-val" style="color:' + (top.gec > EPS ? 'var(--danger)' : 'var(--muted)') + '">' + fmt(top.gec) + '</div></div>'
     + '<div><div class="cari-lbl">Ödenen</div><div class="cari-val" style="color:var(--ok)">' + fmt(top.od) + '</div></div>'
-    + '</div>';
+    + '</div>'
+    + (dovizli ? '<div class="cari-para">Borç: <b>' + esc(paraYazi(paraTop, window.fmtA)) + '</b> <span>· TL karşılığı bugünkü kurla</span></div>' : '');
 
   // Sekmeler
   h += '<div class="cari-tabs">'
     + ys.map(y => '<button class="cari-tab' + (y.key === _tab ? ' on' : '') + '" data-act="tab" data-key="' + esc(y.key) + '">'
         + (y.tip === 'kredi' ? '💳 ' : '📅 ') + esc(y.etiket)
-        + '<span>' + (y.ozet.kalan > EPS ? fmt(y.ozet.kalan) : '✓') + '</span></button>').join('')
+        + '<span>' + (y.ozet.acikN ? esc(paraYazi(y.ozet.para, window.fmtA)) : '✓') + '</span></button>').join('')
     + '<button class="cari-tab' + (_tab === 'hareket' ? ' on' : '') + '" data-act="tab" data-key="hareket">📋 Hareketler<span>' + hareketler.length + '</span></button>'
     + '<button class="cari-tab cari-yeni" data-act="yeni">+ Yeni Borç / Kredi</button>'
     + '</div>';
@@ -228,26 +245,28 @@ function _yukumlulukHTML(y, hareketler) {
     bilgi = 'Aylık ' + (cur ? window.fmtA(ilk.amount, ilk.currency) : fmt(ilk ? ilk.amount : 0)) + ' · ' + y.ozet.toplamN + ' ay · ' + y.ozet.acikN + ' açık'
       + (ilk && ilk.category ? ' · ' + esc(ilk.category) : '');
   }
-  const acikIlk = y.kalemler.find(k => k.oz.kalan > EPS);
+  const acikIlk = y.kalemler.find(k => k.oz.yerel.kalan > 0);
   let h = '<div class="cari-bilgi-satir">' + bilgi + (y.ozet.gecikmisN ? ' · <b style="color:var(--danger)">' + y.ozet.gecikmisN + ' gecikmiş</b>' : '') + '</div>';
   h += '<div class="cari-aksiyon">'
     + (acikIlk ? '<button class="cari-btn ok" data-act="ode" data-ref="' + esc(refKey(acikIlk.ref)) + '">💰 Ödeme Gir</button>' : '')
     + '<button class="cari-btn" data-act="duzenle">✏️ Düzenle</button>'
     + (y.tip === 'odeme' ? '<button class="cari-btn" data-act="ayekle">➕ Ay Ekle</button>' : '')
     + (y.tip === 'kredi' && !y.cred.closed ? '<button class="cari-btn" data-act="yapilandir">🔁 Yapılandır</button><button class="cari-btn" data-act="kapat">🏁 Erken Kapat</button>' : '')
+    + '<button class="cari-btn" data-act="tasi" title="Bu borcu başka kişinin cari kartına taşı">↪ Taşı</button>'
     + '<button class="cari-btn sil" data-act="sil">🗑 Sil</button>'
     + '</div>';
 
   h += '<div class="cari-aylar' + (y.kalemler.length > 6 ? ' cok' : '') + '">' + y.kalemler.map(k => {
     const o = k.h.obj;
     const renk = k.oz.st === 'paid' ? 'var(--ok)' : k.oz.gecikmis ? 'var(--danger)' : k.oz.st === 'partial' ? 'var(--ora)' : 'var(--txt)';
-    const durum = k.oz.st === 'paid' ? '✓ Ödendi' : k.oz.st === 'partial' ? 'Kısmi · kalan ' + fmt(k.oz.kalan) : k.oz.gecikmis ? 'Gecikmiş' : 'Bekliyor';
-    const tutar = (!k.h.cred && o.currency && o.currency !== 'TRY') ? window.fmtA(o.amount, o.currency) : fmt(k.oz.tam);
+    const yz = k.oz.yerel;
+    const durum = k.oz.st === 'paid' ? '✓ Ödendi' : k.oz.st === 'partial' ? 'Kısmi · kalan ' + window.fmtA(yz.kalan, yz.para) : k.oz.gecikmis ? 'Gecikmiş' : 'Bekliyor';
+    const tutar = yz.para !== 'TRY' ? window.fmtA(o.amount, yz.para) + '<small> ≈' + fmt(k.oz.tam) + '</small>' : fmt(k.oz.tam);
     return '<div class="cari-ay" data-act="ay" data-ref="' + esc(refKey(k.ref)) + '">'
       + '<div style="min-width:0;flex:1"><div style="font-size:13px;font-weight:600">' + (k.h.cred ? o.idx + '. taksit · ' : '') + _tarihUzun(o.date) + '</div>'
       + '<div style="font-size:11px;color:' + renk + '">' + durum + '</div></div>'
       + '<div class="cari-tutar" style="color:' + renk + '">' + tutar + '</div>'
-      + (k.oz.kalan > EPS ? '<button class="cari-btn ok kucuk" data-act="ode" data-ref="' + esc(refKey(k.ref)) + '">Öde</button>' : '<span style="width:44px"></span>')
+      + (yz.kalan > 0 ? '<button class="cari-btn ok kucuk" data-act="ode" data-ref="' + esc(refKey(k.ref)) + '">Öde</button>' : '<span style="width:44px"></span>')
       + '</div>';
   }).join('') + '</div>';
 
@@ -262,7 +281,7 @@ function _hareketSatir(e) {
   return '<div class="cari-hrk' + (iptal ? ' iptal' : '') + '" data-act="hrk" data-id="' + esc(String(e.id)) + '">'
     + '<div style="flex:1;min-width:0"><div class="cari-hrk-t">' + esc(e.detail || '') + '</div>'
     + '<div style="font-size:10px;color:var(--muted);margin-top:2px">' + esc(window.fmtD(hr.tarih)) + (iptal ? ' · geri alındı' : (hr.duzenlendi ? ' · düzenlendi' : '')) + '</div></div>'
-    + '<div class="cari-tutar" style="color:' + (iptal ? 'var(--muted)' : 'var(--ok)') + '">' + window.fmt(hr.tutar) + '</div>'
+    + '<div class="cari-tutar" style="color:' + (iptal ? 'var(--muted)' : 'var(--ok)') + '">' + window.fmtA(hr.tutar, hr.para || 'TRY') + '</div>'
     + (iptal ? '<div class="cari-hrk-sil" title="Kaydı sil">🗑</div>' : '<div style="color:var(--muted)">›</div>')
     + '</div>';
 }
@@ -307,6 +326,8 @@ function _tikla(ev) {
     case 'kapat': if (y) window.openCloseCredit(y.cred.id); break;
     case 'sil': if (y) _borcSil(y); break;
     case 'kisisil': window.kisiSilSec && window.kisiSilSec(_pid); break;
+    case 'birlestir': window.openBirlestir && window.openBirlestir(_pid); break;
+    case 'tasi': if (y && window.openBorcTasi) window.openBorcTasi(_pid, y.key, _kisi().name + ' · ' + y.etiket); break;
     case 'yeni': openCariYeni(); break;
     case 'kisi': {
       const i = (window.persons || []).findIndex(p => p.id === _pid);

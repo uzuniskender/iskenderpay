@@ -4,6 +4,7 @@
 // renderHist + HL delegation (v8.188): T4 sekmesi kaldirildi, defter Log ledger'inda
 
 import { todayMidnight, toTRY } from './util.js';
+import { kalemOzet, paraTopla } from './para.js';
 
 let _prlHandlersAttached = false;
 
@@ -14,27 +15,53 @@ function renderPersons() {
     pl.innerHTML='<div class="empty"><div class="ico">👥</div><p>Henüz kişi yok.<br>+ Kişi Ekle ile başlayın.</p></div>';
     return;
   }
-  const sortedPersons = [...(window.persons||[])].filter(p => !p.arsiv).sort((a,b) => a.name.localeCompare(b.name,'tr'));
-  const arsivdekiler = [...(window.persons||[])].filter(p => p.arsiv).sort((a,b) => a.name.localeCompare(b.name,'tr'));
-  pl.innerHTML = `<div style="max-width:480px">` + sortedPersons.map(p => {
+  // v8.234: Kişiler = Rehber + cari hesaplar TEK liste. Arama ad / telefon / şirket / IBAN üzerinde.
+  const qEl = document.getElementById('KISI_ARA');
+  const q = qEl ? window.araNormalize(qEl.value || '') : '';
+  const qRakam = q.replace(/\D/g, '');
+  const filtre = document.getElementById('KISI_FILTRE') ? document.getElementById('KISI_FILTRE').value : 'hepsi';
+  const eslesir = p => !q
+    || window.araNormalize(p.name).includes(q)
+    || window.araNormalize(p.company || '').includes(q)
+    || window.araNormalize(p.desc || '').includes(q)
+    || (qRakam.length >= 3 && (p.phones || []).some(t => String(t.num || '').replace(/\D/g, '').includes(qRakam)));
+  const ozetler = new Map();
+  const ozetOf = p => { if (!ozetler.has(p.id)) { try { ozetler.set(p.id, _buildPersonSummary(p.id, p.name)); } catch (e) { ozetler.set(p.id, null); } } return ozetler.get(p.id); };
+  let aktif = [...(window.persons||[])].filter(p => !p.arsiv && eslesir(p));
+  if (filtre === 'borclu') aktif = aktif.filter(p => { const s = ozetOf(p); return s && s.bekleyen > 0.5; });
+  if (filtre === 'gecikmis') aktif = aktif.filter(p => { const s = ozetOf(p); return s && s.gecikmis > 0.5; });
+  // Borcu olanlar üstte (en büyük bekleyen önce), sonra borcu olmayanlar alfabetik
+  aktif.sort((a, b) => {
+    const sa = ozetOf(a), sb = ozetOf(b);
+    const ba = sa ? sa.bekleyen : 0, bb = sb ? sb.bekleyen : 0;
+    if ((ba > 0.5) !== (bb > 0.5)) return ba > 0.5 ? -1 : 1;
+    if (ba > 0.5 && Math.abs(ba - bb) > 0.5) return bb - ba;
+    return a.name.localeCompare(b.name, 'tr');
+  });
+  const arsivdekiler = [...(window.persons||[])].filter(p => p.arsiv && eslesir(p)).sort((a,b) => a.name.localeCompare(b.name,'tr'));
+  const borclu = aktif.filter(p => { const s = ozetOf(p); return s && s.bekleyen > 0.5; }).length;
+  pl.innerHTML = `<div style="max-width:560px">`
+  + `<div style="font-size:11px;color:var(--muted);margin:0 2px 8px">${aktif.length} kişi · ${borclu} borçlu</div>`
+  + aktif.map(p => {
     const origIdx = (window.persons||[]).indexOf(p);
     const pid = p.id || '';
-    const cursorStyle = pid ? 'cursor:pointer;' : '';
-    // v8.231: listede kisinin bekleyen/gecikmis borcu (cari kart ozetiyle ayni kaynak)
+    const s = ozetOf(p);
     let ozetHtml = '';
-    try {
-      const s = _buildPersonSummary(pid, p.name);
-      if (s.bekleyen > 0.5) ozetHtml = `<span style="color:${s.gecikmis>0.5?'var(--danger)':'var(--ora)'};font-family:'IBM Plex Mono',monospace;font-weight:600">${window.fmt(s.bekleyen)}</span> bekleyen${s.gecikmis>0.5?' · ⚠ '+window.fmt(s.gecikmis)+' gecikmiş':''}`;
-    } catch(e) {}
-    return `<div data-person-id="${pid}" style="${cursorStyle}background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rs);padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+    if (s && s.bekleyen > 0.5) {
+      const dov = s.para && Object.keys(s.para).some(k => k !== 'TRY');
+      ozetHtml = `<span style="color:${s.gecikmis>0.5?'var(--danger)':'var(--ora)'};font-family:'IBM Plex Mono',monospace;font-weight:600">${window.fmt(s.bekleyen)}</span> bekleyen${s.gecikmis>0.5?' · ⚠ '+window.fmt(s.gecikmis)+' gecikmiş':''}${dov?' · '+window.esc(window.Para.paraYazi(s.para, window.fmtA)):''}`;
+    }
+    const tel = (p.phones || []).find(t => t.num);
+    const alt = [p.company, p.desc, tel && tel.num].filter(Boolean).map(window.esc).join(' · ');
+    return `<div data-person-id="${pid}" style="${pid?'cursor:pointer;':''}background:var(--surf);border:1px solid var(--bdr);border-radius:var(--rs);padding:9px 12px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px">
       <div style="min-width:0;flex:1">
         <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${window.esc(p.name)}</div>
-        ${p.desc?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${window.esc(p.desc)}</div>`:''}
+        ${alt?`<div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${alt}</div>`:''}
         ${ozetHtml?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${ozetHtml}</div>`:''}
       </div>
       <div style="display:flex;gap:5px;flex-shrink:0">
+        ${tel?`<a href="tel:${encodeURIComponent(tel.num)}" data-tel="1" style="background:rgba(74,222,128,.12);color:var(--ok);border:1px solid rgba(74,222,128,.25);border-radius:6px;padding:4px 8px;font-size:12px;text-decoration:none">📞</a>`:''}
         <button data-edit-idx="${origIdx}" style="background:rgba(192,132,252,.15);color:var(--acc2);border:1px solid rgba(192,132,252,.2);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer">Düzenle</button>
-        <button data-del-idx="${origIdx}" style="background:rgba(248,113,113,.12);color:var(--danger);border:1px solid rgba(248,113,113,.2);border-radius:6px;padding:4px 8px;font-size:11px;font-weight:600;cursor:pointer">Sil</button>
       </div>
     </div>`;
   }).join('')
@@ -50,10 +77,9 @@ function renderPersons() {
 
   if (!_prlHandlersAttached) {
     pl.addEventListener('click', (e) => {
+      if (e.target.closest('a[data-tel]')) return;
       const editBtn = e.target.closest('button[data-edit-idx]');
       if (editBtn) { editPerson(parseInt(editBtn.dataset.editIdx)); return; }
-      const delBtn = e.target.closest('button[data-del-idx]');
-      if (delBtn) { delPerson(parseInt(delBtn.dataset.delIdx)); return; }
       const geriBtn = e.target.closest('button[data-geri]');
       if (geriBtn) { window.kisiGeriGetir(geriBtn.dataset.geri); return; }
       const kaliciBtn = e.target.closest('button[data-kalici]');
@@ -63,6 +89,7 @@ function renderPersons() {
     });
     _prlHandlersAttached = true;
   }
+  if (window.renderSaglamaBar) window.renderSaglamaBar();
 }
 
 // v8.231: Kisiler sekmesi acikken borc degisirse (cari karttan) listedeki ozet tazelenir
@@ -71,23 +98,22 @@ window.addEventListener('store:change', e => {
   if (window.Store && window.Store._affects(e.detail, ['persons','pays','creds'])) renderPersons();
 });
 
+// v8.234: öneri listesi = kişilerin KENDİ adları. Eskiden "AD 2", "AD 3" gibi numaralı adlar
+// öneriyordu; kişiye bağlanamayan "ZELİHA 1 / ZELİHA 2" kayıtlarının kaynağı buydu.
 function updateDatalist() {
   const dl = document.getElementById('PNLIST');
   if (!dl) return;
-  const usedNames = window.pays.filter(p => !p._cid).map(p => p.name);
-  const options = window.persons.map(p => {
-    if (!usedNames.includes(p.name)) return p.name;
-    let i=2; while(usedNames.includes(p.name+' '+i)) i++;
-    return p.name+' '+i;
-  }).sort();
-  dl.innerHTML = options.map(n => `<option value="${n}">`).join('');
+  dl.innerHTML = (window.persons || []).filter(p => !p.arsiv).map(p => p.name)
+    .sort((a, b) => a.localeCompare(b, 'tr')).map(n => `<option value="${window.esc(n)}">`).join('');
 }
+
+const _val = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+const _set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
 
 function openAddPerson() {
   document.getElementById('PREID').value = '';
   document.getElementById('PRMT').innerHTML = 'Kişi <span>Ekle</span>';
-  document.getElementById('PRNAME').value = '';
-  document.getElementById('PRDESC').value = '';
+  ['PRNAME','PRDESC','PRTEL','PRIBAN','PRMAIL','PRFIRMA','PRNOT'].forEach(id => _set(id, ''));
   ModalManager.open('PRM');
 }
 
@@ -97,7 +123,31 @@ function editPerson(i) {
   document.getElementById('PRMT').innerHTML = 'Kişi <span>Düzenle</span>';
   document.getElementById('PRNAME').value = p.name;
   document.getElementById('PRDESC').value = p.desc||'';
+  _set('PRTEL', (p.phones || []).map(t => t.num).filter(Boolean).join(', '));
+  _set('PRIBAN', p.iban || '');
+  _set('PRMAIL', p.email || '');
+  _set('PRFIRMA', p.company || '');
+  _set('PRNOT', p.note || '');
   ModalManager.open('PRM');
+}
+
+// Formdaki iletişim alanları (form alanı yoksa undefined -> mevcut değer korunur)
+function _iletisimFormu(eski) {
+  const out = {};
+  const tel = _val('PRTEL');
+  if (tel !== undefined) {
+    const eskiTel = (eski && eski.phones) || [];
+    out.phones = tel.split(/[,;\n]/).map(x => x.trim()).filter(Boolean).map(num => {
+      const n = window.normPhone ? window.normPhone(num) : num;
+      const var_ = eskiTel.find(t => String(t.num).replace(/\D/g, '') === n.replace(/\D/g, ''));
+      return { lbl: (var_ && var_.lbl) || 'Cep', num: n };
+    });
+  }
+  const iban = _val('PRIBAN'); if (iban !== undefined) out.iban = iban.toLocaleUpperCase('tr').replace(/\s+/g, '');
+  const mail = _val('PRMAIL'); if (mail !== undefined) out.email = mail.trim();
+  const firma = _val('PRFIRMA'); if (firma !== undefined) out.company = firma.trim();
+  const not = _val('PRNOT'); if (not !== undefined) out.note = not.trim();
+  return out;
 }
 
 function savePerson() {
@@ -105,11 +155,17 @@ function savePerson() {
   const desc = document.getElementById('PRDESC').value.trim();
   if (!name) { alert('İsim zorunlu'); return; }
   const eid = document.getElementById('PREID').value;
+  const ak = window.KisiVeri ? window.KisiVeri.adAnahtari : (n => n);
   if (eid !== '') {
     const idx = parseInt(eid);
     const existing = window.persons[idx];
     const oldName = existing.name;
     const pid = existing.id || null;
+    const ayniAd = (window.persons || []).find((p, i) => i !== idx && ak(p.name) === ak(name));
+    if (ayniAd && ak(oldName) !== ak(name)) {
+      alert('"' + ayniAd.name + '" adında başka bir kişi zaten var.\n\nAynı kişiyse birleştir: onun cari kartını aç → ⇄ Birleştir.');
+      return;
+    }
     if (oldName !== name) {
       window.pays.forEach(p => {
         if ((pid && p.personId === pid) || (!p.personId && p.name === oldName))
@@ -124,15 +180,20 @@ function savePerson() {
       });
       if (pid) window.addLog('plan_edit', 'Kişi adı değişti', oldName + ' → ' + name, 2, {personId: pid});
     }
-    const newObj = {name, desc};
+    // v8.234: nesnenin DİĞER alanları (arşiv, telefon, IBAN...) korunur — eskiden {name,desc,id} ile eziliyordu
+    const newObj = Object.assign({}, existing, {name, desc}, _iletisimFormu(existing));
     if (pid) newObj.id = pid;
     window.Store.spliceAt('persons', idx, 1, newObj);
   } else {
-    let finalName = name;
-    const existingNames = window.persons.map(p => p.name);
-    if (existingNames.includes(name)) { let i=2; while(existingNames.includes(name+' '+i)) i++; finalName=name+' '+i; }
+    const ayniAd = (window.persons || []).find(p => ak(p.name) === ak(name));
+    if (ayniAd) {
+      alert('"' + ayniAd.name + '" zaten kayıtlı. Aynı kişiye ikinci kart açılmaz; mevcut kartı açıyorum.');
+      window.closeMov('PRM');
+      if (ayniAd.id && window.openCari) window.openCari(ayniAd.id);
+      return;
+    }
     const newId = 'per_'+Date.now()+'_'+Math.random().toString(36).slice(2,7);
-    window.Store.push('persons', {id:newId, name:finalName, desc});
+    window.Store.push('persons', Object.assign({id:newId, name, desc}, _iletisimFormu(null)));
   }
   window.closeMov('PRM'); renderPersons();
 }
@@ -151,52 +212,41 @@ function delPerson(i) {
 // Öncelik: personId match > legacy name match (personId yoksa).
 // Bekleyen tanımı: tüm aktif (paid değil) borç; gecikmiş alt-küme ayrı raporlanır.
 function _buildPersonSummary(personId, personName) {
-  const today = todayMidnight();
-  // v8.167: çoklu grup + kredi fix.
-  //  (1) İsim eşleşmesi taban-isim üzerinden (suffix soyulur) → "QNB 1"/"QNB (Kira)" gibi
-  //      legacy/disambigue satırlar da yakalanır (eski: tam eşleşme, suffix'liler kaçıyordu).
-  //  (2) Kredi taksitleri ayrıca taranır — cred objesinde personId yok, bağ yalnız isim;
-  //      bekleyen kredi taksitleri eskiden hiç sayılmıyordu (ödenmişler paidItems'tan geliyordu → asimetri).
+  // v8.234: tutarlar js/para.js#kalemOzet'ten (cari kart, plan, sağlama ile aynı kaynak).
+  // Bağ: personId KESİN; personId'siz eski kayıt için taban-isim (açılış düzenlemesi sonrası nadir).
   const baseOf = window.Hesap ? window.Hesap._baseOf : (n => (n || '').replace(/ \d+$/, '').trim() || n);
-  // v8.170: kalan tutar + gecikmiş tek kaynaktan (Hesap.kalan / isOD) — toplamOzeti/krediler ile birebir.
-  const kalan = (window.Hesap && window.Hesap.kalan)
-    ? window.Hesap.kalan
-    : ((a, pd, c) => Math.max(0, (c ? toTRY(a, c, window.rates) : (a || 0)) - (pd || 0)));
-  const isOverdue = (p) => window.isOD ? window.isOD(p) : (p.date && window.parseLocalDate(p.date) < today);
+  const bugunISO = (() => { const t = todayMidnight(); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); })();
   const baseName = baseOf(personName);
   const matches = (p) => (personId && p.personId === personId) || (!p.personId && baseOf(p.name) === baseName);
   let bekleyen = 0, gecikmis = 0, bekleyenCount = 0, gecikmisCount = 0;
-  // v8.169: bekleyen tutarı yükümlülük bazında (pay grubu / kredi) ayrı raporla.
-  const breakdownMap = {}; // key -> { label, bekleyen, gecikmis }
-  const addPending = (remaining, overdue, key, label) => {
-    bekleyen += remaining;
+  const paraOz = [];
+  const breakdownMap = {};
+  const addPending = (oz, overdue, key, label) => {
+    paraOz.push(oz);
+    bekleyen += oz.kalanTL;
     bekleyenCount++;
-    if (overdue) { gecikmis += remaining; gecikmisCount++; }
+    if (overdue) { gecikmis += oz.kalanTL; gecikmisCount++; }
     if (!breakdownMap[key]) breakdownMap[key] = { label, bekleyen: 0, gecikmis: 0 };
-    breakdownMap[key].bekleyen += remaining;
-    if (overdue) breakdownMap[key].gecikmis += remaining;
+    breakdownMap[key].bekleyen += oz.kalanTL;
+    if (overdue) breakdownMap[key].gecikmis += oz.kalanTL;
   };
-  // (1) Normal pays — yükümlülük = groupId (yoksa pay id'si)
-  // v8.190: etiket plan matrisi gibi ayristirilir (desc || category) — coklu grupta "QNB" x3 cakismasini onler.
   (window.pays || []).filter(matches).forEach(p => {
-    if ((p.status || 'pending') === 'paid') return;
+    const oz = kalemOzet(p, window.rates);
+    if (oz.kalan === 0) return;
     const tag = p.desc || p.category;
     const label = (p.name || personName) + (tag ? ' (' + tag + ')' : '');
-    addPending(kalan(p.amount, p.paid, p.currency || 'TRY'), isOverdue(p), p.groupId || ('pay:' + p.id), label);
+    addPending(oz, String(p.date) < bugunISO, p.groupId || ('pay:' + p.id), label);
   });
-  // (2) Kredi taksitleri (cred.pays.amount zaten TRY — toplamOzeti ile tutarlı). Yükümlülük = kredi.
   (window.creds || []).forEach(c => {
-    // v8.231: kredi personId tasiyorsa KESIN bag; yoksa (eski kredi) taban-isim
     if (c.personId ? c.personId !== personId : baseOf(c.name) !== baseName) return;
     (c.pays || []).forEach(p => {
-      if ((p.status || 'pending') === 'paid') return;
-      addPending(kalan(p.amount, p.paid), isOverdue(p), 'cred:' + c.id, c.name + ' (kredi)');
+      const oz = kalemOzet({ ...p, _cid: c.id }, window.rates);
+      if (oz.kalan === 0) return;
+      addPending(oz, String(p.date) < bugunISO, 'cred:' + c.id, c.name + ' (kredi)');
     });
   });
   const personPaidItems = (window.paidItems || []).filter(matches);
   const odenmisToplam = personPaidItems.reduce((s, pi) => s + (pi.paid || 0), 0);
-  // v8.190: tag eklendikten sonra hala ayni etikete sahip gruplar kalirsa (ayni isim+kategori, desc yok)
-  // sayisal disambiguator ekle — hicbir iki satir birebir ayni gorunmesin ("kayip/mukerrer" hissi).
   const _seenLabel = {};
   Object.values(breakdownMap).forEach(b => {
     const n = (_seenLabel[b.label] = (_seenLabel[b.label] || 0) + 1);
@@ -209,7 +259,8 @@ function _buildPersonSummary(personId, personName) {
     bekleyen, bekleyenCount,
     gecikmis, gecikmisCount,
     odenmisToplam, odenmisCount: personPaidItems.length,
-    breakdown
+    breakdown,
+    para: paraTopla(paraOz)
   };
 }
 

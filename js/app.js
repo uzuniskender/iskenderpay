@@ -102,7 +102,12 @@ function enterApp() {
         // backfill ("[backfill] 5 atandi" x3). Plan degisiminde planId degisir -> yeni
         // planda yine kosar; ayni plana donuste kayitli veri zaten backfilled -> no-op.
         const bfKey = (window.Store.fbUid||'local') + '-' + window.Store.planId;
-        if (_backfilledFor !== bfKey) { _backfillPersonIds(); _backfilledFor = bfKey; }
+        if (_backfilledFor !== bfKey) {
+          _backfillPersonIds();
+          // v8.234: Rehber -> Kişiler, borç -> kişi bağı, karışık para ayrımı (bakiye değişmez; kisi-ui.js)
+          try { if (window.kisiVeriDuzenle) window.kisiVeriDuzenle(); } catch (e) { console.warn('[kisi] düzenleme hatası:', e); }
+          _backfilledFor = bfKey;
+        }
       })
       .catch(e => console.warn('Migrasyon hatası:', e))
       .finally(() => { _migrationRunning = false; });
@@ -126,6 +131,7 @@ function rhbSave() { saveSecure(); }
 
 // ── SEKME YÖNETİMİ ───────────────────────────────────────────────────────────
 function go(n) {
+  if (n === 6) n = 2;   // v8.234: Rehber, Kişiler'e katıldı (telefon/IBAN kişinin üstünde)
   window.curTab = n;
   // T1 (Ödemeler) + T4 (Geçmiş) v8.181'de gizlendi, v8.188'de tamamen kaldirildi —
   // islevleri Log ledger'inda (v8.177). go(1)/go(4) artik no-op.

@@ -6,6 +6,7 @@
 // Veri YAZMAZ: satıra dokununca mevcut ekranlar (openCell, cari kart, ödeme gir) açılır.
 
 import { toTRY, toLocalISO, parseLocalDate } from './util.js';
+import { kalemOzet } from './para.js';
 
 const GUN = 86400000;
 const $ = id => document.getElementById(id);
@@ -23,18 +24,18 @@ export function anaSayfaVerisi(items, rates, bugun, ufukGun) {
   let toplam = 0, gecikmis = 0, buAyKalan = 0, buAyOdenen = 0, buAyToplam = 0;
   const gecikmisler = [], yaklasanlar = [];
   (items || []).forEach(p => {
-    const tam = p._cid ? (p.amount || 0) : toTRY(p.amount, p.currency || 'TRY', rates);
-    const st = p.status || 'pending';
-    const kalan = st === 'paid' ? 0 : Math.max(0, tam - (p.paid || 0));
+    // v8.234: tek kaynak para.js (dövizli kısmi ödeme kendi biriminde)
+    const oz = kalemOzet(p, rates);
+    const tam = oz.tamTL, kalan = oz.kalanTL;
     const d = String(p.date || '');
     if (d >= ayBas && d <= aySon) {
       buAyToplam += tam;
-      buAyOdenen += st === 'paid' ? (p.paid > 0 ? p.paid : tam) : (p.paid || 0);
+      buAyOdenen += oz.odenenTL;
       buAyKalan += kalan;
     }
-    if (kalan <= 0.5) return;
+    if (oz.kalan === 0) return;
     toplam += kalan;
-    const satir = { p, kalan, tam, kismi: st === 'partial' || (p.paid || 0) > 0 };
+    const satir = { p, kalan, tam, kismi: oz.durum === 'partial' };
     if (d < bugunISO) {
       gecikmis += kalan;
       satir.gun = Math.round((bugun - parseLocalDate(d)) / GUN);

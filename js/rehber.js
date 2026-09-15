@@ -33,7 +33,7 @@ function renderRhb() {
   const coSet=[...new Set(window.rehber.map(p=>p.company).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'tr'));
   const dlEl=document.getElementById('RHB_CO_LIST');
   if(dlEl)dlEl.innerHTML=coSet.map(c=>`<option value="${window.esc(c)}">`).join('');
-  const el=document.getElementById('RHB_LIST');if(!el)return;
+  const el=document.getElementById('RHB_LIST');if(!el)return;  // v8.234: Rehber sekmesi kaldırıldı -> no-op
   if(!list.length){el.innerHTML='<div class="empty"><div class="ico">📒</div><p>Kişi bulunamadı.<br>+ Ekle ile başlayın.</p></div>';return;}
   el.innerHTML=list.map(p=>{
     const initials=rhbGetInitials(p);
@@ -111,6 +111,8 @@ function rhbImport() {
       let added=0,skipped=0;
       data.forEach(p=>{const key=rhbGetName(p)+'|'+(p.phones?.[0]?.num||'');if(existKey.has(key)){skipped++;return;}p.id=p.id||Date.now()+added;window.Store.push('rehber', p);added++;existKey.add(key);});
       renderRhb();
+      // v8.234: içe aktarılan rehber kayıtları hemen kişilere katılır (aynı adlıya telefon eklenir)
+      if(added>0&&window.kisiVeriDuzenle){window.kisiVeriDuzenle();if(window.curTab===2&&window.renderPersons)window.renderPersons();}
       if(added>0)window.addLog('rhb_import','Rehber içe aktarıldı',added+' kişi eklendi'+(skipped>0?', '+skipped+' atlandı':''),6);
       alert(added+' kişi eklendi'+(skipped>0?', '+skipped+' zaten mevcut':'')+'.');
     }catch(err){alert('Dosya okunamadı: '+err.message);}

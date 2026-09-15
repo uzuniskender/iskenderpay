@@ -12,7 +12,8 @@
 // Güvenlik kapısı: eski kalem silinmiş / yapılandırılmışsa (üzerinde o kadar ödeme yoksa)
 // hareket değiştirilemez — yanlış kalemden para düşülmez.
 
-import { toTRY } from './util.js';
+import { toTRY, fmtA } from './util.js';
+import { kalemOzet, odemePatch, odenenYerel, kalemParasi, kur, tolerans } from './para.js';
 
 const EPS = 0.5; // kuruş/yuvarlama toleransı (₺)
 
@@ -91,12 +92,25 @@ export function defterAyarla(liste, ref, delta, tam, ek) {
   return { liste: arr, paidId };
 }
 
+// v8.234: hareket tutarı KALEMİN PARASINDADIR (`para` alanı). Eski hareketlerde `para` yok ve tutar TL'dir.
+export function kalemNesnesi(h) {
+  return h.cred ? { ...h.obj, _cid: h.cred.id } : h.obj;
+}
+export function hareketYerel(hareket, h, rates) {
+  const para = kalemParasi(kalemNesnesi(h));
+  if (para === 'TRY' || hareket.para === para) return Number(hareket.tutar) || 0;
+  const r = kur(para, rates);
+  return r ? (Number(hareket.tutar) || 0) / r : 0;
+}
+
 // Hareket değiştirilebilir mi? Eski kalem duruyor ve üzerinde en az `tutar` ödeme var.
-export function geriAlinabilir(hareket, pays, creds) {
+export function geriAlinabilir(hareket, pays, creds, rates) {
   if (!hareket || hareket.iptal) return { ok: false, neden: 'Bu hareket zaten geri alınmış.' };
   const h = hedefBul(hareket.ref, pays, creds);
   if (!h) return { ok: false, neden: 'Ödemenin yazıldığı kalem artık yok (silinmiş veya kredi yapılandırılmış). Bu hareket değiştirilemez.' };
-  if ((h.obj.paid || 0) + EPS < hareket.tutar) {
+  const nesne = kalemNesnesi(h);
+  const para = kalemParasi(nesne);
+  if (odenenYerel(nesne, rates) + tolerans(para) < hareketYerel(hareket, h, rates)) {
     return { ok: false, neden: 'Kalemdeki ödeme bu hareketten az (plan ekranından değiştirilmiş). Bu hareket değiştirilemez.' };
   }
   return { ok: true, h };
@@ -125,20 +139,30 @@ function _snapshot(h, ref) {
   return { ...h.obj };
 }
 
-// Kaleme delta uygula (kalem + defter). Dönüş: kullanılan paidId.
+// Kaleme delta uygula (kalem + defter). delta KALEMİN PARASINDA. Dönüş: kullanılan paidId.
+// Kalem: ödenen kendi parasında (para.js). Defter: o günün TL karşılığı (trend/geçmiş için).
 function _uygula(ref, delta, paidAt, paidId) {
   const h = hedefBul(ref, window.pays, window.creds);
   if (!h) return null;
-  const tam = tamTutar(h, window.rates);
-  Object.assign(h.obj, durumHesapla(h.obj.paid, delta, tam));
-  const r = defterAyarla(window.paidItems, ref, delta, tam, { paidId, snapshot: _snapshot(h, ref), paidAt });
+  const nesne = kalemNesnesi(h);
+  const oz = kalemOzet(nesne, window.rates);
+  const patch = odemePatch(nesne, delta, window.rates);
+  Object.assign(h.obj, patch);
+  if (!patch.odenenPara) delete h.obj.odenenPara;
+  const oran = kur(oz.para, window.rates) || 0;
+  const r = defterAyarla(window.paidItems, ref, delta * oran, oz.tamTL, { paidId, snapshot: _snapshot(h, ref), paidAt });
   window.Store.replace('paidItems', r.liste);
   return r.paidId;
 }
 
+function _paraOf(ref) {
+  const h = hedefBul(ref, window.pays, window.creds);
+  return h ? kalemParasi(kalemNesnesi(h)) : 'TRY';
+}
+
 function _detay(ref, tutar) {
   const h = hedefBul(ref, window.pays, window.creds);
-  return (h ? _etiket(h) : '?') + ' · ₺' + Number(tutar).toLocaleString('tr-TR', { maximumFractionDigits: 0 });
+  return (h ? _etiket(h) : '?') + ' · ' + fmtA(Number(tutar), _paraOf(ref));
 }
 
 function _ctx(ref, extra) {
@@ -155,7 +179,7 @@ export function planOdemesiLogla(item, delta, paidId, kismi) {
   if (!(delta > 0.005)) return;
   const ref = refOf(item);
   const bugun = new Date();
-  const hareket = { ref, tutar: delta, tarih: bugun.toISOString().slice(0, 10), paidId: paidId || null };
+  const hareket = { ref, tutar: delta, para: _paraOf(ref), tarih: bugun.toISOString().slice(0, 10), paidId: paidId || null };
   window.addLog('paid', kismi ? 'Kısmi ödeme' : 'Ödeme yapıldı', _detay(ref, delta), 1, _ctx(ref, { hareket }));
 }
 
@@ -214,24 +238,40 @@ function _kalemSecenekleri(personId, seciliRef, haricTutar) {
   const opts = [];
   let secildi = false;
   kalemler.forEach(({ ref, h }) => {
-    const tam = tamTutar(h, window.rates);
+    const nesne = kalemNesnesi(h);
+    const oz = kalemOzet(nesne, window.rates);
     const ayni = seciliRef && refEsit(ref, seciliRef);
-    const odenen = (h.obj.paid || 0) - (ayni ? (haricTutar || 0) : 0);
-    const kalan = Math.max(0, tam - odenen);
-    if (kalan <= EPS && !ayni) return; // tamamen ödenmiş kalemler listelenmez
+    // Düzenlenen hareketin kendi tutarı kalana geri eklenir (aynı kaleme yeniden yazılabilsin)
+    const kalan = ayni ? Math.min(oz.tam, oz.kalan + (haricTutar || 0)) : oz.kalan;
+    if (kalan <= tolerans(oz.para) && !ayni) return; // tamamen ödenmiş kalemler listelenmez
     const isSel = ayni || (!seciliRef && !secildi);
     if (isSel) secildi = true;
-    opts.push('<option value="' + window.esc(refKey(ref)) + '" data-kalan="' + kalan + '"' + (isSel ? ' selected' : '') + '>'
-      + window.esc(_etiket(h)) + ' · kalan ' + window.fmt(kalan) + '</option>');
+    opts.push('<option value="' + window.esc(refKey(ref)) + '" data-kalan="' + kalan + '" data-para="' + oz.para + '"' + (isSel ? ' selected' : '') + '>'
+      + window.esc(_etiket(h)) + ' · kalan ' + fmtA(kalan, oz.para) + '</option>');
   });
   sel.innerHTML = opts.length ? opts.join('') : '<option value="">Bu kişinin açık kalemi yok</option>';
   sel.disabled = !opts.length;
+  _birimYaz();
 }
 
 function _kalanOf() {
   const o = document.getElementById('HRK_ITEM').selectedOptions[0];
   return o ? Number(o.dataset.kalan) || 0 : 0;
 }
+
+function _paraSecili() {
+  const o = document.getElementById('HRK_ITEM').selectedOptions[0];
+  return (o && o.dataset.para) || 'TRY';
+}
+
+function _birimYaz() {
+  const el = document.getElementById('HRK_AMT_LBL');
+  if (!el) return;
+  const para = _paraSecili();
+  el.textContent = 'Tutar (' + (para === 'EUR' ? '€' : para === 'GOLD' ? 'gram altın' : '₺') + ')';
+}
+
+function _yuvarla(x, para) { return para === 'TRY' ? Math.round(x) : Math.round(x * 100) / 100; }
 
 // Yeni ödeme (entryId boş) veya mevcut hareketi düzenle
 function openHareket(personId, entryId, onSecim) {
@@ -240,7 +280,7 @@ function openHareket(personId, entryId, onSecim) {
   // Geri alınmış hareket: tek işlem kalır -> kaydı sistemden sil (PIN)
   if (e && e.hareket && e.hareket.iptal) { _hrkPerson = personId; kaydiSilHareket(String(e.id)); return; }
   if (e) {
-    const g = geriAlinabilir(e.hareket, window.pays, window.creds);
+    const g = geriAlinabilir(e.hareket, window.pays, window.creds, window.rates);
     if (!g.ok) {
       // Kalemi silinmiş / yapılandırılmış: para değiştirilemez ama iz silinebilir
       if (confirm(g.neden + '\n\nBu kaydı yalnızca logdan silmek ister misin? (Plana dokunulmaz)')) { _hrkPerson = personId; kaydiSilHareket(String(e.id), true); }
@@ -257,8 +297,9 @@ function openHareket(personId, entryId, onSecim) {
     .sort((a, b) => a.name.localeCompare(b.name, 'tr'))
     .map(p => '<option value="' + window.esc(p.id) + '"' + (p.id === personId ? ' selected' : '') + '>' + window.esc(p.name) + '</option>').join('');
   // onSecim: cari karttan "Öde" -> o ayın kalemi seçili gelir (refKey)
-  _kalemSecenekleri(personId, e ? e.hareket.ref : refParse(onSecim), e ? e.hareket.tutar : 0);
-  document.getElementById('HRK_AMT').value = e ? Math.round(e.hareket.tutar * 100) / 100 : Math.round(_kalanOf());
+  const eYerel = e ? (() => { const h = hedefBul(e.hareket.ref, window.pays, window.creds); return h ? hareketYerel(e.hareket, h, window.rates) : e.hareket.tutar; })() : 0;
+  _kalemSecenekleri(personId, e ? e.hareket.ref : refParse(onSecim), eYerel);
+  document.getElementById('HRK_AMT').value = e ? Math.round(eYerel * 100) / 100 : _yuvarla(_kalanOf(), _paraSecili());
   document.getElementById('HRK_DATE').value = e ? e.hareket.tarih : new Date().toISOString().slice(0, 10);
   document.getElementById('HRK_INFO').textContent = e ? 'Değiştirince yalnız bu tutar eski kalemden düşülür, seçtiğin kaleme eklenir. Başka kayıt değişmez.' : '';
   ModalManager.open('HRKMOD');
@@ -270,7 +311,8 @@ function hrkKisiDegisti() {
   const e = eid ? (window.actLog || []).find(x => String(x.id) === eid) : null;
   // Aynı kişiye geri dönüldüyse eski kalem seçili gelsin
   const eskiKisi = e && e.personId === pid;
-  _kalemSecenekleri(pid, eskiKisi ? e.hareket.ref : null, eskiKisi ? e.hareket.tutar : 0);
+  const h = eskiKisi ? hedefBul(e.hareket.ref, window.pays, window.creds) : null;
+  _kalemSecenekleri(pid, eskiKisi ? e.hareket.ref : null, h ? hareketYerel(e.hareket, h, window.rates) : 0);
 }
 
 function saveHareket() {
@@ -283,30 +325,32 @@ function saveHareket() {
   if (!(tutar > 0)) { alert('Tutar 0\'dan büyük olmalı.'); return; }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) { alert('Tarih seçin.'); return; }
   const kalan = _kalanOf();
-  if (tutar > kalan + EPS) { alert('Tutar bu kalemin kalanından (' + window.fmt(kalan) + ') büyük olamaz.'); return; }
+  const para = _paraSecili();
+  if (tutar > kalan + tolerans(para)) { alert('Tutar bu kalemin kalanından (' + fmtA(kalan, para) + ') büyük olamaz.'); return; }
   if (!hedefBul(ref, window.pays, window.creds)) { alert('Seçilen kalem bulunamadı.'); return; }
   const paidAt = new Date(tarih + 'T12:00:00').toISOString();
 
   if (!eid) {
     window.Store.tx(() => {
       const paidId = _uygula(ref, tutar, paidAt, null);
-      const hareket = { ref, tutar, tarih, paidId };
+      const hareket = { ref, tutar, para, tarih, paidId };
       window.addLog('paid', 'Ödeme yapıldı', _detay(ref, tutar), 1, _ctx(ref, { hareket }));
     });
   } else {
     const e = (window.actLog || []).find(x => String(x.id) === eid);
     if (!e) { alert('Hareket bulunamadı.'); return; }
-    const g = geriAlinabilir(e.hareket, window.pays, window.creds);
+    const g = geriAlinabilir(e.hareket, window.pays, window.creds, window.rates);
     if (!g.ok) { alert(g.neden); return; }
     const eski = e.hareket;
+    const eskiYerel = hareketYerel(eski, g.h, window.rates);
     window.Store.tx(() => {
-      _uygula(eski.ref, -eski.tutar, null, eski.paidId);           // eski kalemden düş
+      _uygula(eski.ref, -eskiYerel, null, eski.paidId);            // eski kalemden düş (kalemin parasında)
       const paidId = _uygula(ref, tutar, paidAt, refEsit(ref, eski.ref) ? eski.paidId : null); // yeni kaleme ekle
       const ctx = _ctx(ref);
       const patch = {
         title: 'Ödeme yapıldı', detail: _detay(ref, tutar),
         personId: ctx.personId || undefined, groupId: ctx.groupId || undefined, credId: ctx.credId || undefined,
-        hareket: { ref, tutar, tarih, paidId, duzenlendi: new Date().toISOString() }
+        hareket: { ref, tutar, para, tarih, paidId, duzenlendi: new Date().toISOString() }
       };
       window.Store.mutateItem(e, patch);
       Object.keys(patch).forEach(k => { if (patch[k] === undefined) delete e[k]; });
@@ -320,11 +364,13 @@ function geriAlHareket() {
   const eid = document.getElementById('HRK_EID').value;
   const e = (window.actLog || []).find(x => String(x.id) === eid);
   if (!e) return;
-  const g = geriAlinabilir(e.hareket, window.pays, window.creds);
+  const g = geriAlinabilir(e.hareket, window.pays, window.creds, window.rates);
   if (!g.ok) { alert(g.neden); return; }
-  if (!confirm('Bu ödeme (' + window.fmt(e.hareket.tutar) + ') geri alınacak. Kalemden yalnız bu tutar düşülür. Emin misin?')) return;
+  const yerel = hareketYerel(e.hareket, g.h, window.rates);
+  const para = kalemParasi(kalemNesnesi(g.h));
+  if (!confirm('Bu ödeme (' + fmtA(yerel, para) + ') geri alınacak. Kalemden yalnız bu tutar düşülür. Emin misin?')) return;
   window.Store.tx(() => {
-    _uygula(e.hareket.ref, -e.hareket.tutar, null, e.hareket.paidId);
+    _uygula(e.hareket.ref, -yerel, null, e.hareket.paidId);
     window.Store.mutateItem(e, { hareket: { ...e.hareket, iptal: new Date().toISOString(), iptalNeden: 'kisi' } });
   });
   window.closeMov('HRKMOD');
@@ -341,18 +387,20 @@ async function kaydiSilHareket(eid, sadeceIz) {
   const aktif = !e.hareket.iptal && !sadeceIz;
   let g = null;
   if (aktif) {
-    g = geriAlinabilir(e.hareket, window.pays, window.creds);
+    g = geriAlinabilir(e.hareket, window.pays, window.creds, window.rates);
     if (!g.ok) { alert(g.neden); return; }
   }
+  const yerel = g ? hareketYerel(e.hareket, g.h, window.rates) : 0;
+  const para = g ? kalemParasi(kalemNesnesi(g.h)) : 'TRY';
   const ack = window.esc(e.detail || '') + '<br><br>'
     + (aktif
-      ? '<b>Bu ödeme hâlâ geçerli.</b> Kayıt silinince ödeme de geri alınır: ' + window.fmt(e.hareket.tutar) + ' kalemden düşülür, ay ödenmemiş görünür.'
+      ? '<b>Bu ödeme hâlâ geçerli.</b> Kayıt silinince ödeme de geri alınır: ' + fmtA(yerel, para) + ' kalemden düşülür, ay ödenmemiş görünür.'
       : 'Kayıt kalıcı olarak silinir. Plana dokunulmaz.')
     + '<br>Onaylamak için şifreni gir.';
   const ok = window.pinOnay ? await window.pinOnay('Kaydı <span>Sil</span>', ack) : confirm('Kayıt silinsin mi?');
   if (!ok) return;
   window.Store.tx(() => {
-    if (aktif) _uygula(e.hareket.ref, -e.hareket.tutar, null, e.hareket.paidId);
+    if (aktif) _uygula(e.hareket.ref, -yerel, null, e.hareket.paidId);
     window.Store.removeWhere('actLog', x => x === e || String(x.id) === String(e.id));
   });
   window.closeMov('HRKMOD');
@@ -365,12 +413,13 @@ function _yenile(personId) {
   if (window.curTab === 7 && window.renderActLog) window.renderActLog();
 }
 
-window.Hareket = { planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir, payKisiye, credKisiye, refKey, refEsit, tamTutar, durumHesapla };
+window.Hareket = { planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir, hareketYerel, payKisiye, credKisiye, refKey, refEsit, tamTutar, durumHesapla };
 window.openHareket    = openHareket;
 window.hrkKisiDegisti = hrkKisiDegisti;
 // Yeni ödemede kalem değişince tutar = kalan önerilir; düzenlemede girilen tutar korunur (taşıma).
 window.hrkKalemDegisti = () => {
-  if (!document.getElementById('HRK_EID').value) document.getElementById('HRK_AMT').value = Math.round(_kalanOf());
+  _birimYaz();
+  if (!document.getElementById('HRK_EID').value) document.getElementById('HRK_AMT').value = _yuvarla(_kalanOf(), _paraSecili());
 };
 window.saveHareket    = saveHareket;
 window.geriAlHareket  = geriAlHareket;

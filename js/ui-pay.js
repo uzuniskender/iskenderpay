@@ -27,9 +27,12 @@ function editPay(id) {
   ModalManager.open('PM2');
 }
 
+// v8.234: ad eşleşmesi aksan/büyük-küçük/sondaki numaradan bağımsız ve TEK aday şartıyla
+// ("zeliha çelik" = "Zeliha ÇELİK"). İki kişi aynı anahtara düşerse bağlamaz (yanlış kişiye yazmaz).
 function _resolvePersonId(name) {
-  const base = window.Hesap ? window.Hesap._baseOf(name) : name;
-  const person = (window.persons || []).find(p => p.name === base);
+  const ak = window.KisiVeri ? window.KisiVeri.adAnahtari : (n => (window.Hesap ? window.Hesap._baseOf(n) : n));
+  const adaylar = (window.persons || []).filter(p => ak(p.name) === ak(name));
+  const person = adaylar.length === 1 ? adaylar[0] : null;
   if (!person) return null;
   // v8.111: legacy person (v8.109 öncesi eklenmiş) id'siz olabilir — lazy üret
   if (!person.id && window.Store) {
@@ -41,7 +44,7 @@ function _resolvePersonId(name) {
 }
 
 function savePay() {
-  const name=document.getElementById('PN').value.trim();
+  let name=document.getElementById('PN').value.trim();
   const amount=parseFloat(document.getElementById('PA').value);
   const currency=document.getElementById('PC').value;
   const date=document.getElementById('PD').value;
@@ -49,6 +52,9 @@ function savePay() {
   const copyMonths=parseInt(document.getElementById('COPYMO').value)||0;
   if(!name||!amount||!date){alert('Ad, tutar ve tarih zorunlu');return;}
   const personId=_resolvePersonId(name);
+  // v8.234: kayıt kişinin KENDİ adıyla yazılır (numaralı/farklı yazımlı ad oluşmaz)
+  const _kisi=personId?(window.persons||[]).find(p=>p.id===personId):null;
+  if(_kisi) name=_kisi.name;
   const eid=document.getElementById('EID').value;
   // v8.197: Kişiler'de eşleşme yoksa kayıt REDDEDİLİR (sert engel). Yeni kayıt veya isim
   // değişiminde uygulanır; mevcut kayıtsız kaydın (isim aynı) tutar/tarih düzenlemesi
@@ -139,9 +145,15 @@ function saveCred() {
       cr.name=name; cr.total=total||monthly*inst; cr.monthly=monthly; cr.inst=inst; cr.start=start;
       if(personId) cr.personId=personId;   // v8.231: kredi-kisi kesin bag (cari kart)
       if(structureChanged){
-        // Taksit sayısı veya tarih değişti — yeniden oluştur, mevcut paid durumları koru
-        pArr.forEach((newP,i)=>{
-          const old=cr.pays[i];
+        // v8.234: Taksit sayısı veya tarih değişti. Ödeme bilgisi AYNI AYA taşınır (sıra numarasına göre
+        // DEĞİL). Eskiden i. taksitin ödemesi yeni planın i. taksitine kopyalanıyordu; başlangıç bir ay
+        // kayınca "ödendi" yanlış aya geçiyordu. Yeni planda karşılığı olmayan ödenmiş ay varsa işlem durur.
+        const ayOf=d=>String(d).slice(0,7);
+        const odemeli=cr.pays.filter(o=>(o.status||'pending')!=='pending'||(o.paid||0)>0);
+        const kayip=odemeli.filter(o=>!pArr.some(n=>ayOf(n.date)===ayOf(o.date)));
+        if(kayip.length){alert('Bu değişiklik '+kayip.length+' ödenmiş taksiti planın dışında bırakıyor ('+kayip.map(o=>ayOf(o.date)).join(', ')+').\n\nKaydedilmedi. Kalan borcu yeniden planlamak için cari karttan "Yapılandır" kullan.');return;}
+        pArr.forEach(newP=>{
+          const old=odemeli.find(o=>ayOf(o.date)===ayOf(newP.date));
           if(old){newP.status=old.status;newP.paid=old.paid||0;}
         });
         cr.pays=pArr;

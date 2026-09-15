@@ -3,6 +3,7 @@
 // store:change event listener. ui-plan.js'ten v8.150'de ayrıştırıldı.
 
 import { todayMidnight, toTRY, maxAheadMonths, araNormalize } from './util.js';
+import { kalemOzet } from './para.js';
 
 // ── DATA / HESAPLAMA ─────────────────────────
 function getAllItems() {
@@ -12,25 +13,35 @@ function getAllItems() {
   return [...window.pays, ...credPays];
 }
 
+// v8.234: hücre tutarları js/para.js#kalemOzet'ten gelir.
+//   cell.try   = hücredeki kalemlerin TL tam tutarı (bilgi)
+//   cell.kalan = hücrede ÖDENMEMİŞ kalan TL (tablo, sütun ve satır toplamları BUNU kullanır)
+// Eskiden bir ayda iki kalem varsa ve biri ödendiyse, ödenen de bekliyor gibi toplanıyordu.
+// Satır adı: kalem kişiye bağlıysa kişinin GÜNCEL adı (kişi adı değişince plan da değişir).
 function buildMx(all) {
   const mx = {};
+  const kisiAdi = new Map((window.persons || []).map(p => [p.id, p.name]));
   all.forEach(p => {
     const d = window.parseLocalDate(p.date);
     const mk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     const rawKey = p._cid ? 'cred_'+p._cid : (p.groupId ? 'g_'+p.groupId : 'pay_'+String(Math.floor(Number(p.id))));
-    if (!mx[rawKey]) mx[rawKey] = {_name:p.name};
-    if (!mx[rawKey][mk]) mx[rawKey][mk] = {items:[], status:'pending', try:0};
-    mx[rawKey][mk].items.push(p);
-    mx[rawKey][mk].try += toTRY(p.amount, p.currency||'TRY', window.rates);
+    if (!mx[rawKey]) mx[rawKey] = {_name: (p.personId && kisiAdi.get(p.personId)) || p.name, _personId: p.personId || null};
+    if (!mx[rawKey][mk]) mx[rawKey][mk] = {items:[], status:'pending', try:0, kalan:0, odenen:0};
+    const oz = kalemOzet(p, window.rates);
+    const cell = mx[rawKey][mk];
+    cell.items.push(p);
+    cell.try += oz.tamTL;
+    cell.kalan += oz.kalanTL;
+    cell.odenen += oz.odenenTL;
   });
-  // Durum hesabı düzeltme (item bazlı)
+  // Durum hesabı (item bazlı, para çekirdeğinden)
   Object.keys(mx).forEach(rk => {
     Object.keys(mx[rk]).filter(k=>!k.startsWith('_')).forEach(mk => {
       const cell = mx[rk][mk];
-      const items = cell.items;
-      if (items.every(p => (p.status||'pending')==='paid')) cell.status='paid';
-      else if (items.some(p => (p.status||'pending')==='partial')) cell.status='partial';
-      else if (items.some(p => (p.status||'pending')!=='paid' && window.isOD(p))) cell.status='overdue';
+      const oz = cell.items.map(p => kalemOzet(p, window.rates));
+      if (oz.every(o => o.kalan === 0)) cell.status='paid';
+      else if (oz.some(o => o.odenen > 0 && o.kalan > 0)) cell.status='partial';
+      else if (cell.items.some((p, i) => oz[i].kalan > 0 && window.isOD(p))) cell.status='overdue';
       else cell.status='pending';
     });
   });
@@ -71,14 +82,15 @@ function render() {
   const ozet = window.Hesap.buAyOzeti({all});
   const tot = ozet.tot, ok = ozet.ok, bek = ozet.bek, gec = ozet.gec;
   const okN = ozet.okN, bekN = ozet.bekN, gecN = ozet.gecN;
-  // Sayfa başlığında geciken ödeme sayısı
-  document.title = gecN > 0 ? `(${gecN} gecikmiş) iskenderpay` : 'iskenderpay';
+  // Sayfa başlığında geciken ödeme sayısı — v8.234: TÜM gecikmişler (eskiden yalnız bu ayınkiler sayılıyordu)
+  const tumGecN = window.Hesap.gecikmisSayisi(all);
+  document.title = tumGecN > 0 ? `(${tumGecN} gecikmiş) iskenderpay` : 'iskenderpay';
 
   // Mobil nav badge — Plan butonuna gecikmiş sayısı
   const navPlan = document.getElementById('m0');
   if (navPlan) {
-    navPlan.innerHTML = gecN > 0
-      ? `📊 Plan <span style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px">${gecN}</span>`
+    navPlan.innerHTML = tumGecN > 0
+      ? `📊 Plan <span style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px">${tumGecN}</span>`
       : '📊 Plan';
   }
 
@@ -147,7 +159,7 @@ function render() {
     tb.textContent = showPaid ? '✓ Ödendiler gizle' : '✓ Ödendiler';
   }
   const mLbls=months.map(m=>{const[y,mo]=m.split('-');return new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'short',year:'2-digit'});});
-  const colTot=months.map(m=>rowKeys.reduce((s,k)=>{const c=mx[k]&&mx[k][m];if(!c)return s;if(c.status==='paid')return s;if(c.status==='partial')return s+(c.try-c.items.reduce((a,p)=>a+(p.paid||0),0));return s+c.try;},0));
+  const colTot=months.map(m=>rowKeys.reduce((s,k)=>{const c=mx[k]&&mx[k][m];return c?s+c.kalan:s;},0));
   let html='<table class="mtbl"><thead><tr><th class="rh">Ödeme</th><th style="min-width:32px;max-width:36px;width:32px">Gün</th>';
   months.forEach((m,i)=>html+=`<th${m===curMK?' style="color:var(--acc);font-weight:700"':''}>${mLbls[i]}</th>`);
   html+='<th>Toplam</th></tr></thead><tbody>';
@@ -155,22 +167,22 @@ function render() {
     const dispName=mx[k]._displayName||mx[k]._name||k;
     const _firstMk=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort()[0];
     const _dayNum=_firstMk&&mx[k][_firstMk]?.items?.[0]?.date?window.parseLocalDate(mx[k][_firstMk].items[0].date).getDate():'';
-    html+=`<tr data-row-key="${k}"><td class="rh" onclick="openRow('${encodeURIComponent(k)}')" title="${window.esc(dispName)}">${window.esc(dispName)}</td><td style="text-align:center;font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;min-width:32px;max-width:36px;width:32px">${_dayNum}</td>`;
+    // v8.234: satır adına dokun = kişinin CARİ KARTI (kişiye bağlı değilse eski satır detayı)
+    const _adTik = mx[k]._personId && (window.persons||[]).some(p=>p.id===mx[k]._personId)
+      ? `openCari('${window.esc(mx[k]._personId)}')` : `openRow('${encodeURIComponent(k)}')`;
+    html+=`<tr data-row-key="${k}"><td class="rh" onclick="${_adTik}" title="${window.esc(dispName)} — cari kartı aç">${window.esc(dispName)}</td><td style="text-align:center;font-size:10px;color:var(--muted);font-family:'IBM Plex Mono',monospace;min-width:32px;max-width:36px;width:32px">${_dayNum}</td>`;
     months.forEach(m=>{
       const c=mx[k]?.[m];
       if(!c||!c.items){html+=`<td class="ce" onclick="openEmptyCell('${encodeURIComponent(k)}','${m}')" style="cursor:pointer;opacity:.35" title="Bu aya ekle">+</td>`;return;}
       const isSoon=c.status!=='paid'&&c.items.some(p=>{const d=window.parseLocalDate(p.date);return d>=today0&&d<=soon7;});
       const cls=c.status==='paid'?'cp':c.status==='partial'?'ck':c.status==='overdue'?'cg':isSoon?'cy':'cb';
-      const orig=c.items.find(x=>x.currency&&x.currency!=='TRY');
-      const totalPaid=c.items.reduce((a,p)=>a+(p.paid||0),0);
-      const kalan=c.try-totalPaid;
-      let cellContent;
-      if(c.status==='paid'){cellContent=`<span style="font-size:14px">✓</span>`;}
-      else if(c.status==='partial'){const ob2=orig?`<span class="orig-small">${window.fmtA(orig.amount,orig.currency)}</span>`:'';cellContent=`${window.fmt(kalan)}${ob2}`;}
-      else{const ob2=orig?`<span class="orig-small">${window.fmtA(orig.amount,orig.currency)}</span>`:'';cellContent=`${window.fmt(c.try)}${ob2}`;}
+      // Dövizli kalemde küçük yazı = KALAN gram/euro (kısmi ödemede kalan, tam tutar değil)
+      const doviz=c.items.map(x=>({x,oz:kalemOzet(x,window.rates)})).filter(o=>o.oz.para!=='TRY'&&o.oz.kalan>0);
+      const ob2=doviz.length?`<span class="orig-small">${doviz.map(o=>window.fmtA(o.oz.kalan,o.oz.para)).join(' + ')}</span>`:'';
+      const cellContent = c.status==='paid' ? `<span style="font-size:14px">✓</span>` : `${window.fmt(c.kalan)}${ob2}`;
       html+=`<td class="${cls}" onclick="openCell('${encodeURIComponent(k)}','${m}')">${cellContent}</td>`;
     });
-    const rKalan=months.reduce((acc,m)=>{const c=mx[k]?.[m];if(!c)return acc;if(c.status==='paid')return acc;if(c.status==='partial')return acc+(c.try-c.items.reduce((a,p)=>a+(p.paid||0),0));return acc+c.try;},0);
+    const rKalan=months.reduce((acc,m)=>{const c=mx[k]?.[m];return c?acc+c.kalan:acc;},0);
     html+=`<td style="font-weight:600;color:${rKalan===0?'var(--ok)':'var(--txt)'}">${rKalan===0?'✓':window.fmt(rKalan)}</td></tr>`;
   });
   html+=`<tr class="tot"><td class="rh">TOPLAM</td><td></td>`;
@@ -228,7 +240,7 @@ function renderHaftaWidget(all, now, soon7) {
     const kalanStr = kalan === 0 ? '<span style="color:var(--danger);font-weight:700">Bugün!</span>'
       : kalan === 1 ? '<span style="color:var(--ora)">Yarın</span>'
       : `<span style="color:#fcd34d">${kalan} gün</span>`;
-    const tryAmt = toTRY(p.amount, p.currency||'TRY', window.rates);
+    const tryAmt = kalemOzet(p, window.rates).kalanTL;
     const rawKey = p.groupId ? 'g_'+p.groupId : 'pay_'+String(Math.floor(Number(p.id)));
     const keyEnc = encodeURIComponent(rawKey);
     const mKey = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
@@ -254,7 +266,7 @@ function renderHaftaWidget(all, now, soon7) {
       const d = window.parseLocalDate(p.date);
       const gun = d.getDate(), ay = d.toLocaleDateString('tr-TR',{month:'short'});
       const gecGun = Math.round((todayMidnight() - d) / 86400000);
-      const tryAmt = toTRY(p.amount, p.currency||'TRY', window.rates);
+      const tryAmt = kalemOzet(p, window.rates).kalanTL;
       const rawKey = p.groupId ? 'g_'+p.groupId : 'pay_'+String(Math.floor(Number(p.id)));
       const mKey = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:rgba(248,113,113,.08);border-radius:8px;cursor:pointer" onclick="openCell('${encodeURIComponent(rawKey)}','${mKey}')">
