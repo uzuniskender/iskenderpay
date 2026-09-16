@@ -73,6 +73,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/ui-persons.js';
     import './js/ui-notes.js';
     import './js/rehber.js';
+    import './js/log-core.js';
     import './js/log.js';
     import './js/hareket.js';
     import './js/cari.js';
@@ -317,81 +318,20 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
 
       </div>
     </div>
-    <!-- LOG -->
+    <!-- LOG (v8.239 sade): ara + zaman + tür; kayda dokun = ne zaman ne oldu + düzelt/geri al/sil -->
     <div id="T7" style="display:none">
       <div class="ph">
         <div><h1>📋 <span>Log</span></h1><div style="font-size:11px;color:var(--muted);margin-top:2px" id="LOG_CNT"></div></div>
-        <button onclick="openLogDel()" class="add-btn" style="background:rgba(248,113,113,.1);color:var(--danger);border-color:rgba(248,113,113,.2);font-size:12px">🗑️ Sil</button>
+        <button id="LOG_SEC_BTN" onclick="logSecimAc()" class="add-btn" style="font-size:12px">☑ Seç</button>
       </div>
-      <div style="padding:0 16px 8px;display:flex;gap:6px;overflow-x:auto">
-        <button id="LOG_FILTER_ALL"   onclick="setLogFilter('all')"   class="btn" style="font-size:11px;font-weight:600;background:rgba(96,165,250,.15);color:var(--blue);border-color:rgba(96,165,250,.3)">Hepsi</button>
-        <button id="LOG_FILTER_TODAY" onclick="setLogFilter('today')" class="btn bc" style="font-size:11px;font-weight:600">Bugün</button>
-        <button id="LOG_FILTER_WEEK"  onclick="setLogFilter('week')"  class="btn bc" style="font-size:11px;font-weight:600">Bu hafta</button>
-        <button id="LOG_FILTER_MONTH" onclick="setLogFilter('month')" class="btn bc" style="font-size:11px;font-weight:600">Bu ay</button>
+      <div class="log-ust">
+        <div class="log-ara"><input id="LOG_ARA" class="fi" type="search" placeholder="🔍 Ara: kişi, kalem, tutar, açıklama" oninput="logAra(this.value)" autocomplete="off"><button id="LOG_TEMIZLE" class="log-cip" onclick="logTemizle()" style="display:none">Temizle</button></div>
+        <div class="log-cipler" id="LOG_ZAMAN"></div>
+        <div class="log-cipler" id="LOG_TUR"></div>
+        <div class="log-cipler" id="LOG_KISI"></div>
+        <div id="LOG_SEC_BAR" class="log-secbar" style="display:none"></div>
       </div>
-      <div id="LOG_FILT_BAR" style="padding:0 16px 8px">
-        <select id="LOG_FILT_PERSON" class="fi" onchange="setLogPersonFilter(this.value)" style="width:100%;font-size:13px;padding:8px 10px"></select>
-        <select id="LOG_FILT_GROUP" class="fi" onchange="setLogGroupFilter(this.value)" style="width:100%;font-size:13px;padding:8px 10px;margin-top:6px"></select>
-        <select id="LOG_FILT_CRED" class="fi" onchange="setLogCredFilter(this.value)" style="width:100%;font-size:13px;padding:8px 10px;margin-top:6px"></select>
-        <select id="LOG_FILT_TYPE" class="fi" onchange="setLogTypeFilter(this.value)" style="width:100%;font-size:13px;padding:8px 10px;margin-top:6px"></select>
-      </div>
-      <div id="LOG_DEL_BAR" style="padding:0 16px 8px;display:none">
-        <div style="background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:12px">
-          <!-- Mod seçimi -->
-          <div style="display:flex;gap:6px;margin-bottom:10px">
-            <button id="LOG_MODE_RANGE" onclick="setLogDelMode('range')" class="btn" style="flex:1;font-size:11px;font-weight:700;background:rgba(96,165,250,.15);color:var(--blue);border-color:rgba(96,165,250,.3)">📅 Saat</button>
-            <button id="LOG_MODE_SEL" onclick="setLogDelMode('select')" class="btn bc" style="flex:1;font-size:11px;font-weight:700">☑️ Seç</button>
-            <button id="LOG_MODE_PERSON" onclick="setLogDelMode('person')" class="btn bc" style="flex:1;font-size:11px;font-weight:700">👤 Kişi</button>
-            <button id="LOG_MODE_GROUP" onclick="setLogDelMode('group')" class="btn bc" style="flex:1;font-size:11px;font-weight:700">📋 Grup</button>
-          </div>
-          <!-- Saat aralığı paneli -->
-          <div id="LOG_RANGE_PANEL">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Saat aralığı seçin</div>
-            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-              <input type="datetime-local" id="LOG_D1" class="fi" style="flex:1;min-width:150px;padding:7px 10px;font-size:12px">
-              <span style="color:var(--muted);font-size:12px">—</span>
-              <input type="datetime-local" id="LOG_D2" class="fi" style="flex:1;min-width:150px;padding:7px 10px;font-size:12px">
-            </div>
-            <div style="display:flex;gap:6px;margin-top:8px">
-              <button onclick="doLogDel()" class="btn" style="flex:1;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3)">Aralığı Sil</button>
-              <button onclick="doLogDelAll()" class="btn bc" style="flex:1;font-size:12px">Tümünü Sil</button>
-              <button onclick="closeLogDel()" class="btn bc" style="flex:0.5">İptal</button>
-            </div>
-          </div>
-          <!-- Seçerek silme paneli -->
-          <div id="LOG_SEL_PANEL" style="display:none">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-              <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer">
-                <input type="checkbox" id="LOG_SEL_ALL" onchange="toggleSelectAllLogs(this.checked)" style="width:15px;height:15px;cursor:pointer"> Tümünü seç
-              </label>
-              <span id="LOG_SEL_CNT" style="font-size:11px;color:var(--muted)">0 seçili</span>
-            </div>
-            <div style="display:flex;gap:6px">
-              <button onclick="doLogDelSelected()" class="btn" style="flex:1;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3);font-size:12px">Seçilileri Sil</button>
-              <button onclick="closeLogDel()" class="btn bc" style="flex:0.5">İptal</button>
-            </div>
-          </div>
-          <!-- Kişi bazlı silme paneli -->
-          <div id="LOG_PERSON_PANEL" style="display:none">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Bu kişinin tüm log'ları silinecek</div>
-            <select id="LOG_PERSON_SEL" class="fi" style="width:100%;padding:7px 10px;font-size:12px;margin-bottom:8px"></select>
-            <div style="display:flex;gap:6px">
-              <button onclick="doLogDelByPerson()" class="btn" style="flex:1;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3);font-size:12px">Kişinin Log'larını Sil</button>
-              <button onclick="closeLogDel()" class="btn bc" style="flex:0.5">İptal</button>
-            </div>
-          </div>
-          <!-- Kayıt grubu bazlı silme paneli -->
-          <div id="LOG_GROUP_PANEL" style="display:none">
-            <div style="font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:600">Bu kayıt grubunun tüm log'ları silinecek</div>
-            <select id="LOG_GROUP_SEL" class="fi" style="width:100%;padding:7px 10px;font-size:12px;margin-bottom:8px"></select>
-            <div style="display:flex;gap:6px">
-              <button onclick="doLogDelByGroup()" class="btn" style="flex:1;background:rgba(248,113,113,.15);color:var(--danger);border:1px solid rgba(248,113,113,.3);font-size:12px">Grubun Log'larını Sil</button>
-              <button onclick="closeLogDel()" class="btn bc" style="flex:0.5">İptal</button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div id="ACT_LOG_LIST" style="padding:0 16px 80px"></div>
+      <div id="ACT_LOG_LIST" style="padding:0 16px 90px"></div>
     </div>
 
 <!-- DETAY PANELİ -->
@@ -536,8 +476,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1327';
-var APP_BUILD   = '20260916-7b0e943';
+var APP_VERSION = 'v8.1335';
+var APP_BUILD   = '20260916-24dcc98';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -933,6 +873,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div id="PIN_ERR" style="font-size:12px;color:var(--danger);min-height:16px;margin:4px 2px 0"></div>
     <div class="brow"><button class="btn bc" type="button" onclick="pinVazgec()">Vazgeç</button><button class="btn" type="button" onclick="pinOnayla()" style="flex:1;background:linear-gradient(135deg,#b91c1c,#ef4444);color:#fff">Onayla ve Sil</button></div>
   </div>
+</div>
+
+<!-- LOG DETAY (v8.239) -->
+<div class="mov" id="LOGMOD" style="z-index:440">
+  <div class="modal"><div class="mhdl"></div><div id="LOGMOD_IC"></div></div>
 </div>
 
 <!-- KİŞİ SİL: arşiv mi kalıcı mı (v8.233) -->

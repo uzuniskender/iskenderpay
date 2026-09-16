@@ -621,3 +621,52 @@ body.plan-fs-on #PLANWRAP::before {
 /* v8.236: plan hücre detayında Cari Kart / Ertele hızlı düğmeleri */
 .dhizli{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 10px}
 .dhizli .dact{flex:1 1 auto;min-height:40px}
+
+/* LOG (v8.239 sade) */
+.log-ust{padding:0 16px 8px;display:flex;flex-direction:column;gap:8px;position:sticky;top:0;z-index:5;background:var(--bg)}
+.log-ara{display:flex;gap:6px;align-items:center}
+.log-ara .fi{flex:1;font-size:15px;padding:11px 12px}
+.log-cipler{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.log-cipler:empty{display:none}
+.log-cip{flex-shrink:0;background:var(--surf);border:1px solid var(--bdr);color:var(--muted);border-radius:20px;padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap}
+.log-cip.on{background:rgba(232,192,125,.15);border-color:rgba(232,192,125,.45);color:var(--acc)}
+.log-gun{display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:14px 2px 6px;border-bottom:1px solid var(--bdr)}
+.log-gun span{font-weight:500}
+.log-satir{display:flex;gap:10px;align-items:flex-start;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.06);cursor:pointer;border-radius:8px}
+.log-satir:active{background:var(--surf)}
+.log-satir.secili{background:rgba(96,165,250,.1)}
+.log-satir.geri .log-bas,.log-satir.geri .log-det{text-decoration:line-through;opacity:.6}
+.log-cb{width:18px;height:18px;margin-top:6px;flex-shrink:0;pointer-events:none}
+.log-saat{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--muted);width:40px;flex-shrink:0;padding-top:7px}
+.log-ico{width:32px;height:32px;border-radius:50%;background:var(--surf2);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.log-orta{flex:1;min-width:0}
+.log-bas{font-size:14px;font-weight:600;color:var(--txt)}
+.log-det{font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4;word-break:break-word}
+.log-not{font-size:12px;color:var(--acc);margin-top:3px}
+.log-kisi{margin-top:5px;background:none;border:1px solid var(--bdr);color:var(--blue);border-radius:12px;padding:2px 9px;font-size:11px;cursor:pointer;font-family:inherit}
+.log-tutar{font-family:'IBM Plex Mono',monospace;font-weight:600;font-size:13px;color:var(--ok);flex-shrink:0;padding-top:6px;white-space:nowrap}
+.log-tutar.geri{color:var(--muted);text-decoration:line-through}
+.log-rozet{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;padding:1px 6px;border-radius:8px;background:rgba(251,191,36,.15);color:var(--gold);vertical-align:middle}
+.log-rozet.geri{background:rgba(248,113,113,.15);color:var(--danger)}
+.log-mini{background:var(--surf);border:1px solid var(--bdr);color:var(--muted);border-radius:8px;padding:6px 10px;cursor:pointer;flex-shrink:0;font-size:14px}
+.log-mini.ok{color:var(--ok);border-color:rgba(74,222,128,.3)}
+.log-bilgi{font-size:12px;color:var(--muted);background:var(--surf);border:1px solid var(--bdr);border-radius:10px;padding:9px 11px;margin:8px 0;line-height:1.5}
+.log-secbar{background:var(--surf);border:1px solid rgba(96,165,250,.3);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.log-sec-ust{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.log-sec-ust .log-cip{margin-left:auto}
+.log-sec-alt{display:flex;gap:6px}
+.log-sec-alt .btn{flex:1;font-size:12px}
+.log-tehlike{background:rgba(248,113,113,.15)!important;color:var(--danger)!important;border:1px solid rgba(248,113,113,.35)!important}
+.log-kutu{background:var(--surf);border:1px solid var(--bdr);border-radius:12px;padding:6px 12px;margin-bottom:10px}
+.log-kutu-bas{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;padding:6px 0 2px}
+.log-simdi{border-color:rgba(74,222,128,.25)}
+.log-bilgi-satir{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13px}
+.log-bilgi-satir:last-child{border-bottom:none}
+.log-bilgi-satir span{color:var(--muted);flex-shrink:0}
+.log-bilgi-satir b{font-weight:600;text-align:right;word-break:break-word}
+.log-bilgi-satir a{color:var(--blue);text-decoration:none}
+.log-eylem{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+.log-eylem .btn{width:100%;text-align:left;padding:12px 14px;font-size:14px}
+.log-eylem .btn small{display:block;font-size:11px;font-weight:400;opacity:.75;margin-top:2px}
+.log-sil-baslik{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:8px}
+.log-eylem .btn:disabled,.log-sec-alt .btn:disabled{opacity:.35;cursor:not-allowed}

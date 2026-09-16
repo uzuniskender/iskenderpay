@@ -274,7 +274,8 @@ function _birimYaz() {
 function _yuvarla(x, para) { return para === 'TRY' ? Math.round(x) : Math.round(x * 100) / 100; }
 
 // Yeni ödeme (entryId boş) veya mevcut hareketi düzenle
-function openHareket(personId, entryId, onSecim) {
+function openHareket(personId, entryId, onSecim, kaynak) {
+  _hrkKaynak = kaynak || '';
   const e = entryId ? (window.actLog || []).find(x => String(x.id) === String(entryId)) : null;
   if (entryId && !e) { alert('Hareket bulunamadı.'); return; }
   // Geri alınmış hareket: tek işlem kalır -> kaydı sistemden sil (PIN)
@@ -407,13 +408,62 @@ async function kaydiSilHareket(eid, sadeceIz) {
   _yenile(_hrkPerson);
 }
 
+// ── LOG EKRANI İÇİN ORTAK İŞLEMLER (v8.239) ───────────────────────────────
+// Hepsi tek Store.tx içinde: kalem (plan + cari kart aynı nesneyi okur) + defter + log
+// birlikte değişir -> plan ve cari kart her zaman senkron.
+
+// Ödemeyi geri al; log satırı üstü çizili kalır.
+export function hareketGeriAl(e) {
+  const g = geriAlinabilir(e && e.hareket, window.pays, window.creds, window.rates);
+  if (!g.ok) return g;
+  const yerel = hareketYerel(e.hareket, g.h, window.rates);
+  window.Store.tx(() => {
+    _uygula(e.hareket.ref, -yerel, null, e.hareket.paidId);
+    window.Store.mutateItem(e, { hareket: { ...e.hareket, iptal: new Date().toISOString(), iptalNeden: 'log' } });
+  });
+  return { ok: true };
+}
+
+// Log kayıtlarını sil. geriAl=true: aktif ödemeler önce kalemden düşülür; geri alınamayan
+// kayıt SİLİNMEZ (atlanan). geriAl=false: yalnız log gider, plan/cari kart DEĞİŞMEZ.
+// Kontrol sırayla yapılır: aynı kaleme iki ödeme geri alınırken ikincisi güncel duruma bakar.
+export function logKayitlariniSil(kayitlar, geriAl) {
+  const sonuc = { silinen: 0, geriAlinan: 0, atlanan: [] };
+  const silSet = new Set();
+  window.Store.tx(() => {
+    (kayitlar || []).forEach(e => {
+      if (!e) return;
+      if (geriAl && e.hareket && !e.hareket.iptal) {
+        const g = geriAlinabilir(e.hareket, window.pays, window.creds, window.rates);
+        if (!g.ok) { sonuc.atlanan.push({ e, neden: g.neden }); return; }
+        _uygula(e.hareket.ref, -hareketYerel(e.hareket, g.h, window.rates), null, e.hareket.paidId);
+        sonuc.geriAlinan++;
+      }
+      silSet.add(e);
+    });
+    if (silSet.size) window.Store.removeWhere('actLog', x => silSet.has(x));
+  });
+  sonuc.silinen = silSet.size;
+  return sonuc;
+}
+
+// Kalemin güncel durumu (log detayında "şu an" satırı)
+export function kalemDurumu(hareket) {
+  const h = hareket && hedefBul(hareket.ref, window.pays, window.creds);
+  if (!h) return null;
+  return { etiket: _etiket(h), ...kalemOzet(kalemNesnesi(h), window.rates) };
+}
+
+let _hrkKaynak = '';   // 'log': düzenleme log ekranından açıldı -> kişi kartı açılmaz
+
 function _yenile(personId) {
   const pid = _hrkPerson || personId;
+  if (_hrkKaynak === 'log') { _hrkKaynak = ''; if (window.renderActLog) window.renderActLog(); return; }
   if (pid && window.openPersonHist) window.openPersonHist(pid);
   if (window.curTab === 7 && window.renderActLog) window.renderActLog();
 }
 
-window.Hareket = { planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir, hareketYerel, payKisiye, credKisiye, refKey, refEsit, tamTutar, durumHesapla };
+window.Hareket = { hareketGeriAl, logKayitlariniSil, kalemDurumu, planOdemesiLogla, kalemHareketleriniKapat, kisiHareketleri, geriAlinabilir, hareketYerel, payKisiye, credKisiye, refKey, refEsit, tamTutar, durumHesapla };
 window.openHareket    = openHareket;
 window.hrkKisiDegisti = hrkKisiDegisti;
 // Yeni ödemede kalem değişince tutar = kalan önerilir; düzenlemede girilen tutar korunur (taşıma).
