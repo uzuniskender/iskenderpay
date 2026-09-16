@@ -214,7 +214,7 @@ async function parmakiziAcUI() {
   } catch (e) {
     const m = e && e.message;
     yaz('var(--danger)', m === 'sifre_yanlis' ? '❌ Şifre yanlış.'
-      : m === 'prf_yok' ? '❌ Bu telefon/tarayıcı parmak izi anahtarını desteklemiyor. Chrome\'u güncelleyip tekrar dene.'
+      : m === 'prf_yok' ? '❌ Geçiş anahtarı hizmetin bunu desteklemiyor. Bitwarden vb. kullanıyorsan Android Ayarlar → Şifreler ve geçiş anahtarları → tercih edilen hizmeti Google Şifre Yöneticisi yap, sonra tekrar dene.'
       : (e && (e.name === 'NotAllowedError' || e.name === 'AbortError')) ? 'İptal edildi.'
       : '❌ Açılamadı: ' + (m || e));
   }
