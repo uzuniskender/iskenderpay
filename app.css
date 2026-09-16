@@ -44,6 +44,7 @@
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
 .pin-eye{position:absolute;right:11px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px}
 .pin-btn{width:100%;max-width:300px;padding:14px;border-radius:12px;background:linear-gradient(135deg,var(--acc2),var(--acc));border:none;color:#0f0e17;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif}
+.pin-parmak{width:100%;max-width:300px;margin-top:10px;padding:13px;border-radius:12px;background:var(--surf);border:2px solid rgba(232,192,125,.45);color:var(--acc);font-size:15px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif;position:relative;z-index:1}
 .pin-err{margin-top:10px;font-size:13px;color:var(--danger);height:18px;position:relative;z-index:1}
 .pin-screen.hidden{display:none}
 /* v8.238: telefonda giriş büyük (parmakla rahat); --pin-zoom masaüstü-site modunu dengeler (plan.js#_pinOlcek) */
@@ -56,6 +57,7 @@
   .pin-inp{font-size:24px;padding:20px 60px 20px 20px;border-radius:16px}
   .pin-eye{font-size:24px;right:8px;padding:12px}
   .pin-btn{padding:20px;font-size:18px;border-radius:16px}
+  .pin-parmak{max-width:440px;padding:20px;font-size:19px;border-radius:16px}
   .pin-err{font-size:15px;height:auto;min-height:20px;text-align:center}
 }
 

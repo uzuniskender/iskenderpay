@@ -143,7 +143,7 @@ function go(n) {
   if (n===0) { window.render(); if (window.renderCredSummary) window.renderCredSummary(); }
   if (n===2) window.renderPersons();
   if (n===3) window.renderNotes();
-  if (n===5) window.renderAI();
+  if (n===5) { window.renderAI(); if (window.ayarlarParmak) window.ayarlarParmak(); }
   if (n===6) window.renderRhb();
   if (n===7) window.renderActLog();
   if (n===0 && window.renderMobil) window.renderMobil();

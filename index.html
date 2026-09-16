@@ -50,6 +50,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/crypto.js';
     import './js/session.js';
     import './js/oturum-hatirla.js';
+    import './js/parmakizi.js';
     import './js/firestore.js';
     import './js/validate.js';
     import './js/integrity.js';
@@ -141,6 +142,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     <button class="pin-eye" onclick="toggleEye('PI',this)">👁</button>
   </div>
   <button class="pin-btn" onclick="doLogin()">Giriş →</button>
+  <button class="pin-parmak" id="PIN_PARMAK" style="display:none" onclick="parmakiziGiris()">👆 Parmak izi ile gir</button>
   <div class="pin-err" id="PE"></div>
 </div>
 
@@ -276,6 +278,17 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
             <div class="pw-wrap" style="margin-bottom:6px"><input class="fi mono-inp" id="NP2" type="password" placeholder="Yeni şifre tekrar" onkeydown="if(event.key===\'Enter\')chPass()"><button class="pw-eye" onclick="toggleEye('NP2')">👁</button></div>
             <div id="PM" style="font-size:12px;min-height:16px;margin-bottom:8px"></div>
             <button onclick="chPass()" class="btn bs" style="width:100%">Şifreyi Güncelle</button>
+          </div>
+
+          <div class="acard">
+            <div class="acard-title">👆 Parmak İzi ile Giriş</div>
+            <div class="acard-sub" id="PARMAK_DURUM">—</div>
+            <div id="PARMAK_AC">
+              <div class="pw-wrap" style="margin-bottom:6px"><input class="fi mono-inp" id="PARMAK_SIFRE" type="password" placeholder="Şifren" autocomplete="off" onkeydown="if(event.key==='Enter')parmakiziAcUI()"><button class="pw-eye" onclick="toggleEye('PARMAK_SIFRE')">👁</button></div>
+              <button onclick="parmakiziAcUI()" class="btn bs" style="width:100%">Parmak izini aç</button>
+            </div>
+            <button id="PARMAK_KAPAT" onclick="parmakiziKapatUI()" class="btn bc" style="width:100%;display:none">Bu cihazda kapat</button>
+            <div id="PARMAK_MSG" style="font-size:12px;min-height:16px;margin-top:8px;line-height:1.5"></div>
           </div>
 
           <div class="acard">
@@ -476,8 +489,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1336';
-var APP_BUILD   = '20260916-1f2a1de';
+var APP_VERSION = 'v8.1337';
+var APP_BUILD   = '20260916-e2da681';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {

@@ -62,6 +62,7 @@ function selectPlan(planId) {
   psEl.style.display = '';
   psEl.classList.add('active');
   _pinOlcek(psEl);
+  if (window.pinEkraniParmak) window.pinEkraniParmak();
   const planName = getPlanName(planId);
   const subEl = document.querySelector('.pin-sub');
   if (subEl) subEl.textContent = planName + ' şifresini girin';
