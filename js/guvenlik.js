@@ -11,6 +11,7 @@
 // Log sekmesindeki toplu silmeler geçerli (geri alınmamış) ödeme hareketlerine DOKUNMAZ.
 
 import { Session } from './session.js';
+import { unwrapDataKey } from './crypto.js';
 import { payKisiye, credKisiye } from './hareket.js';
 
 // ── SAF ÇEKİRDEK (test edilir) ─────────────────────────────────────────────
@@ -84,9 +85,23 @@ export function pinOnay(baslik, aciklama) {
   });
 }
 
-function pinOnayla() {
+// v8.238: "açık kalsın" ile açılan oturumda şifre bellekte yok -> şifre, cihazdaki
+// sarılı anahtarı açabiliyor mu diye doğrulanır (çevrimdışı çalışır). Doğruysa oturuma alınır.
+export async function _pinDogrula(aday) {
+  if (Session.verifyPin(aday)) return true;
+  if (!aday || Session.debugInfo().hasPin) return false;
+  try {
+    const wrapped = window._getWrappedKey() || (window._loadWrappedKeyFirebase && await window._loadWrappedKeyFirebase());
+    if (!wrapped) return false;
+    await unwrapDataKey(wrapped, aday, await window.getSaltAsync('v5-pin-salt'));
+    Session.setPin(aday);
+    return true;
+  } catch (e) { return false; }
+}
+
+async function pinOnayla() {
   const inp = document.getElementById('PIN_INP');
-  if (!Session.verifyPin(inp.value)) {
+  if (!(await _pinDogrula(inp.value))) {
     document.getElementById('PIN_ERR').textContent = 'Şifre hatalı.';
     inp.value = '';
     inp.focus();

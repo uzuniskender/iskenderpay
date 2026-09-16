@@ -37,6 +37,16 @@ function renderPlanNames() {
   if (el2) el2.textContent = n2;
 }
 
+// v8.238: Chrome "Masaüstü sitesi" açıkken telefon sayfayı ~980px genişlikte çizer ve
+// giriş kutusu küçücük kalır. Dokunmatik cihazda sayfa ekrandan belirgin genişse içerik büyütülür.
+function _pinOlcek(psEl) {
+  let oran = 1;
+  try {
+    if (matchMedia('(pointer:coarse)').matches && screen.width > 0) oran = window.innerWidth / screen.width;
+  } catch (e) {}
+  psEl.style.setProperty('--pin-zoom', oran > 1.3 ? String(Math.min(oran, 3).toFixed(2)) : '1');
+}
+
 function selectPlan(planId) {
   window.Store.planId = planId;
   // Veri dizilerini sıfırla — oturum anahtarı (Session) KORUNUR; Store.clearAll
@@ -51,6 +61,7 @@ function selectPlan(planId) {
   const psEl = document.getElementById('PS');
   psEl.style.display = '';
   psEl.classList.add('active');
+  _pinOlcek(psEl);
   const planName = getPlanName(planId);
   const subEl = document.querySelector('.pin-sub');
   if (subEl) subEl.textContent = planName + ' şifresini girin';

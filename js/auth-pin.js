@@ -13,6 +13,7 @@
 import { Session } from './session.js';
 import { shouldMintNewKey } from './keyguard.js';   // WO-15 invaryant (saf, test edilir)
 import { wrapDataKey, unwrapDataKey } from './crypto.js';
+import { oturumKaydet } from './oturum-hatirla.js';   // v8.238 açık kalsın
 
 // ── doLogin ───────────────────────────────────────────────────────────────────
 
@@ -65,8 +66,10 @@ async function doLogin() {
     await window._saveWrappedKeyFirebase(wrappedB64);
     // importDataKey -> NON-EXTRACTABLE CryptoKey; dataKeyRaw fonksiyon scope'unda
     // kalir, return sonrasi GC'ye birakilir (resident tutulmaz).
-    Session.set({ cryptoKey: await window.importDataKey(dataKeyRaw), plainPin: val });
+    const yeniKey = await window.importDataKey(dataKeyRaw);
+    Session.set({ cryptoKey: yeniKey, plainPin: val });
     await window.loadSecure();
+    await oturumKaydet(yeniKey);
     window.enterApp && window.enterApp();
     return;
   }
@@ -90,8 +93,9 @@ async function doLogin() {
   // unwrapDataKey extractable key + rawBytes verir; resident anahtari
   // NON-EXTRACTABLE olarak re-import ediyoruz. rawBytes + extractable key
   // bu scope'ta kalir ve return sonrasi GC'ye birakilir (resident tutulmaz).
+  const oturumKey = await window.importDataKey(unwrapped.rawBytes);
   Session.set({
-    cryptoKey: await window.importDataKey(unwrapped.rawBytes),
+    cryptoKey: oturumKey,
     plainPin:  val
   });
   // WO-04: eski 100k anahtar login'de sessizce 600k'ya yukseltilir (unwrap needsRewrap sinyali).
@@ -123,6 +127,7 @@ async function doLogin() {
       window.showPinErr && window.showPinErr('Veri çözülemedi. Lütfen tekrar deneyin.'); return;
     }
   }
+  await oturumKaydet(oturumKey);   // v8.238: plan kesinleştikten sonra (yenilemede şifre sorulmaz)
   window.enterApp && window.enterApp();
 }
 

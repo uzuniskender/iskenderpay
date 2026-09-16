@@ -49,6 +49,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/compat.js';
     import './js/crypto.js';
     import './js/session.js';
+    import './js/oturum-hatirla.js';
     import './js/firestore.js';
     import './js/validate.js';
     import './js/integrity.js';
@@ -152,7 +153,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       <button class="stab" id="s3" onclick="go(3)">📝 Notlar</button>
       <button class="stab" id="s5" onclick="go(5)">⚙️ Ayarlar</button>
       <button class="stab" id="s7" onclick="go(7)">📋 Log</button>
-      <button class="stab" onclick="switchPlan()" style="margin-top:auto;color:var(--acc2)" id="PLANBTN">🔄 Plan Değiştir</button>
+      <button class="stab" onclick="kilitle()" style="margin-top:auto;color:var(--acc2)" id="PLANBTN">🔒 Kilitle</button>
       <button class="stab" onclick="doGoogleSignOut()" style="color:var(--danger)">🚪 Çıkış</button>
     </nav>
   </div>
@@ -535,8 +536,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.1303';
-var APP_BUILD   = '20260915-8bccab4';
+var APP_VERSION = 'v8.1327';
+var APP_BUILD   = '20260916-7b0e943';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -880,7 +881,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button data-mh="git3"><span>📝</span><b>Notlar</b><small>Şifreli notlar</small></button>
       <button onclick="ModalManager.closeAll();openSaglama()"><span>🧮</span><b>Sağlama</b><small>Hesap tutuyor mu, bağsız kayıt var mı</small></button>
       <button data-mh="git5"><span>⚙️</span><b>Ayarlar</b><small>Şifre, kur, yedek, güncelleme</small></button>
-      <button onclick="ModalManager.closeAll();switchPlan()"><span>🔄</span><b>Plan Değiştir</b><small>Diğer ödeme planı</small></button>
+      <button onclick="ModalManager.closeAll();kilitle()"><span>🔒</span><b>Kilitle</b><small>Şifre sorulsun</small></button>
       <button onclick="ModalManager.closeAll();doGoogleSignOut()" class="tehlike"><span>🚪</span><b>Çıkış</b><small>Hesaptan çık</small></button>
     </div>
   </div>

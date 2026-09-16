@@ -67,9 +67,17 @@ onAuthStateChanged(_auth, (user) => {
     const plsEl   = document.getElementById('PLS');
     const plsUser = document.getElementById('PLS_USER');
     if (plsUser) plsUser.textContent = '👤 ' + (user.displayName || user.email);
-    if (plsEl) plsEl.style.display = 'flex';
-    if (psEl)  { psEl.style.display = 'none'; psEl.classList.remove('active'); }
     window.renderPlanNames();
+    // v8.238: plan seçim ekranı atlanır (son plan açılır); "açık kalsın" kaydı varsa şifre sorulmaz.
+    if (window.girisAkisi) {
+      window.girisAkisi(user.uid).catch(e => {
+        console.warn('[giris] akış hatası:', e);
+        if (psEl && psEl.style.display === 'none') window.selectPlan(window.Store.planId || 'plan1');
+      });
+    } else {
+      if (plsEl) plsEl.style.display = 'flex';
+      if (psEl)  { psEl.style.display = 'none'; psEl.classList.remove('active'); }
+    }
   } else {
     window.Store.fbUid = null;
     // Signout: sync interval'i durdur — _fbStopListen aksi halde orphan
@@ -110,5 +118,6 @@ window.doGoogleSignOut = async function() {
   // v8.187: cikista oturum sirlarini bellekten temizle (cryptoKey/plainPin).
   // Onceki davranis: signOut sonrasi sirlar reload'a kadar bellekte kaliyordu.
   Session.clear();
+  if (window.oturumSil) await window.oturumSil();   // v8.238: "açık kalsın" kaydı da gider
   await signOut(_auth);
 };

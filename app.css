@@ -46,6 +46,18 @@
 .pin-btn{width:100%;max-width:300px;padding:14px;border-radius:12px;background:linear-gradient(135deg,var(--acc2),var(--acc));border:none;color:#0f0e17;font-size:14px;font-weight:700;cursor:pointer;font-family:'Inter',sans-serif}
 .pin-err{margin-top:10px;font-size:13px;color:var(--danger);height:18px;position:relative;z-index:1}
 .pin-screen.hidden{display:none}
+/* v8.238: telefonda giriş büyük (parmakla rahat); --pin-zoom masaüstü-site modunu dengeler (plan.js#_pinOlcek) */
+.pin-screen>*{zoom:var(--pin-zoom,1)}
+@media (pointer:coarse){
+  .pin-logo{font-size:60px}
+  .pin-title{font-size:28px}
+  .pin-sub{font-size:16px;margin-bottom:22px}
+  .pin-wrap,.pin-btn{max-width:440px}
+  .pin-inp{font-size:24px;padding:20px 60px 20px 20px;border-radius:16px}
+  .pin-eye{font-size:24px;right:8px;padding:12px}
+  .pin-btn{padding:20px;font-size:18px;border-radius:16px}
+  .pin-err{font-size:15px;height:auto;min-height:20px;text-align:center}
+}
 
 /* LAYOUT */
 .shell{display:flex;min-height:100vh;position:relative;z-index:1;max-width:100vw;overflow-x:hidden}
