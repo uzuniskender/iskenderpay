@@ -20,6 +20,38 @@ const b64 = u => btoa(String.fromCharCode(...new Uint8Array(u)));
 const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const rastgele = n => crypto.getRandomValues(new Uint8Array(n));
 
+// Saf teşhis (test edilir): neden desteklenmiyor + ne yapılmalı.
+// ortam: {ua, pkc: PublicKeyCredential var mı, creds: navigator.credentials.create var mı, guvenli: isSecureContext, cerceve: iframe içinde mi}
+export function destekTeshis(o) {
+  const ua = String(o.ua || '');
+  const android = /Android/i.test(ua);
+  const gomulu = android && (/; wv\)/.test(ua) || /Version\/[\d.]+ Chrome\/[\d.]+ Mobile/.test(ua) && !/SamsungBrowser/.test(ua))
+    || /FBAN|FBAV|Instagram|WhatsApp|GSA\//.test(ua);
+  const chromeSurum = (ua.match(/Chrome\/(\d+)/) || [])[1];
+  if (o.pkc && o.creds && o.guvenli !== false && !o.cerceve) return { ok: true };
+  if (gomulu) return { ok: false, neden: 'gomulu', mesaj: 'Uygulama bir uygulama içi tarayıcıda açılmış (WhatsApp, Gmail, Google uygulaması vb.). Orada parmak izi çalışmaz. Chrome\'da aç.', chromeAc: android };
+  if (o.guvenli === false) return { ok: false, neden: 'guvensiz', mesaj: 'Sayfa güvenli bağlantıyla (https) açılmamış.' };
+  if (o.cerceve) return { ok: false, neden: 'cerceve', mesaj: 'Uygulama başka bir sayfanın içinde açılmış. Doğrudan adresinden aç.' };
+  if (chromeSurum && Number(chromeSurum) < 118) return { ok: false, neden: 'eski', mesaj: 'Chrome sürümü eski (' + chromeSurum + '). Play Store\'dan Chrome\'u güncelle.' };
+  return { ok: false, neden: 'tarayici', mesaj: 'Bu tarayıcı parmak izi girişini desteklemiyor. Chrome ile aç.', chromeAc: android };
+}
+
+function _ortam() {
+  let cerceve = false;
+  try { cerceve = window.self !== window.top; } catch (e) { cerceve = true; }
+  return {
+    ua: navigator.userAgent, pkc: !!window.PublicKeyCredential,
+    creds: !!(navigator.credentials && navigator.credentials.create),
+    guvenli: window.isSecureContext, cerceve,
+  };
+}
+
+// Android: aynı adresi Chrome'da aç (intent)
+function chromedaAc() {
+  const u = location.href.replace(/^https?:\/\//, '').split('#')[0];
+  location.href = 'intent://' + u + '#Intent;scheme=https;package=com.android.chrome;end';
+}
+
 export function destekVarMi() {
   return typeof window !== 'undefined' && !!window.PublicKeyCredential && !!(navigator.credentials && navigator.credentials.create);
 }
@@ -151,9 +183,16 @@ export function ayarlarParmak() {
   const ac = document.getElementById('PARMAK_AC');
   const kap = document.getElementById('PARMAK_KAPAT');
   if (!d) return;
-  if (!destekVarMi()) {
-    d.textContent = 'Bu tarayıcı parmak izi girişini desteklemiyor.';
+  const t = destekTeshis(_ortam());
+  const msg = document.getElementById('PARMAK_MSG');
+  if (!t.ok) {
+    d.textContent = t.mesaj;
     if (ac) ac.style.display = 'none'; if (kap) kap.style.display = 'none';
+    if (msg) {
+      msg.style.color = 'var(--muted)';
+      msg.innerHTML = (t.chromeAc ? '<button class="btn bs" style="width:100%;margin-bottom:6px" onclick="chromedaAc()">Chrome\'da aç</button>' : '')
+        + '<span style="font-size:10px;opacity:.6;word-break:break-all">' + window.esc(navigator.userAgent) + '</span>';
+    }
     return;
   }
   const var_ = !!kayitOku(_uid());
@@ -190,5 +229,5 @@ function parmakiziKapatUI() {
 }
 
 if (typeof window !== 'undefined') {
-  Object.assign(window, { parmakiziGiris, parmakiziAcUI, parmakiziKapatUI, ayarlarParmak, pinEkraniParmak });
+  Object.assign(window, { chromedaAc, parmakiziGiris, parmakiziAcUI, parmakiziKapatUI, ayarlarParmak, pinEkraniParmak });
 }
