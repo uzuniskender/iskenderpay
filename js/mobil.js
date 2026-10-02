@@ -5,8 +5,9 @@
 //   • Alt menü (+ ve Diğer sayfaları) eylemlerini bağlar
 // Veri YAZMAZ: satıra dokununca mevcut ekranlar (openCell, cari kart, ödeme gir) açılır.
 
-import { toTRY, toLocalISO, parseLocalDate } from './util.js';
+import { toTRY, toLocalISO, parseLocalDate, fmtA } from './util.js';
 import { kalemOzet } from './para.js';
+import { refOf, refEsit } from './hareket.js';
 
 const GUN = 86400000;
 const $ = id => document.getElementById(id);
@@ -22,7 +23,7 @@ export function anaSayfaVerisi(items, rates, bugun, ufukGun) {
   const ayBas = bugunISO.slice(0, 8) + '01';
   const aySon = toLocalISO(bugun.getFullYear(), bugun.getMonth() + 1, 0);
   let toplam = 0, gecikmis = 0, buAyKalan = 0, buAyOdenen = 0, buAyToplam = 0;
-  const gecikmisler = [], yaklasanlar = [];
+  const gecikmisler = [], yaklasanlar = [], buAyOdenenler = [];
   (items || []).forEach(p => {
     // v8.234: tek kaynak para.js (dövizli kısmi ödeme kendi biriminde)
     const oz = kalemOzet(p, rates);
@@ -32,6 +33,7 @@ export function anaSayfaVerisi(items, rates, bugun, ufukGun) {
       buAyToplam += tam;
       buAyOdenen += oz.odenenTL;
       buAyKalan += kalan;
+      if (oz.odenenTL > 0.5) buAyOdenenler.push({ p, odenen: oz.odenenTL, tam });
     }
     if (oz.kalan === 0) return;
     toplam += kalan;
@@ -47,8 +49,25 @@ export function anaSayfaVerisi(items, rates, bugun, ufukGun) {
   });
   gecikmisler.sort((a, b) => String(a.p.date).localeCompare(String(b.p.date)));
   yaklasanlar.sort((a, b) => String(a.p.date).localeCompare(String(b.p.date)));
+  buAyOdenenler.sort((a, b) => String(a.p.date).localeCompare(String(b.p.date)));
   const oran = buAyToplam > 0 ? Math.min(100, Math.round(buAyOdenen / buAyToplam * 100)) : 0;
-  return { toplam, gecikmis, buAyKalan, buAyOdenen, buAyToplam, oran, gecikmisler, yaklasanlar };
+  return { toplam, gecikmis, buAyKalan, buAyOdenen, buAyToplam, oran, gecikmisler, yaklasanlar, buAyOdenenler };
+}
+
+// SAF: kalemin ödemeleri ne zaman yapıldı? Önce hareket logu (geri alınmamış), yoksa ödeme defteri.
+// Dönüş: [{ tarih:'YYYY-MM-DD', tutar|null, kaynak:'log'|'defter' }] eskiden yeniye. Boşsa tarih kayıtlı değil.
+export function odemeTarihleri(item, actLog, paidItems) {
+  const ref = refOf(item);
+  const loglar = (actLog || [])
+    .filter(e => e && e.hareket && !e.hareket.iptal && refEsit(e.hareket.ref, ref))
+    .map(e => ({ tarih: String(e.hareket.tarih || '').slice(0, 10), tutar: Number(e.hareket.tutar) || null, para: e.hareket.para || 'TRY', kaynak: 'log' }));
+  if (loglar.length) return loglar.sort((a, b) => a.tarih.localeCompare(b.tarih));
+  return (paidItems || [])
+    .filter(x => x && x.paidAt && (ref.k === 'cred'
+      ? x._cid != null && String(x._cid) === String(ref.cid) && x._ii === ref.ii
+      : x._cid == null && String(x.id) === String(ref.id)))
+    .map(x => ({ tarih: String(x.paidAt).slice(0, 10), tutar: Number(x.paid) || null, para: 'TRY', kaynak: 'defter' }))
+    .sort((a, b) => a.tarih.localeCompare(b.tarih));
 }
 
 // ── UI ─────────────────────────────────────────────────────────────────────
@@ -103,7 +122,9 @@ function renderMobil() {
     + '<div class="mh-kart-lbl">Toplam bekleyen borç</div>'
     + '<div class="mh-kart-tutar">' + fmt(v.toplam) + '</div>'
     + '<div class="mh-kart-bar"><span style="width:' + v.oran + '%"></span></div>'
-    + '<div class="mh-kart-alt"><span>Bu ay ödenen <b>' + fmt(v.buAyOdenen) + '</b></span><span>%' + v.oran + '</span></div>'
+    // "Bu ay ödenen" belirsizdi (ödeme bu ay mı yapıldı?): vadesi bu ay olan kalemlerden ödenen. Dokun = döküm.
+    + '<button class="mh-kart-alt" data-mh="odenen"><span>' + bugun.toLocaleDateString('tr-TR', { month: 'long' })
+    +   ' vadelilerden ödenen <b>' + fmt(v.buAyOdenen) + '</b>' + (v.buAyOdenenler.length ? ' ›' : '') + '</span><span>%' + v.oran + '</span></button>'
     + '<div class="mh-kart-kutular">'
     +   '<div><span>Bu ay kalan</span><b>' + fmt(v.buAyKalan) + '</b></div>'
     +   '<div class="' + (v.gecikmis > 0.5 ? 'kirmizi' : '') + '"><span>Gecikmiş</span><b>' + fmt(v.gecikmis) + '</b></div>'
@@ -127,6 +148,34 @@ function renderMobil() {
   el.innerHTML = h;
 }
 
+// Bu ay vadeli kalemlerden ödenenler: hangi kalem, ne kadar, ödeme NE ZAMAN yapıldı
+function _odenenlerHTML() {
+  const esc = window.esc, fmt = window.fmt;
+  const bugun = new Date(); bugun.setHours(0, 0, 0, 0);
+  const v = anaSayfaVerisi(window.getAllItems(), window.rates, bugun, 45);
+  const ay = bugun.toLocaleDateString('tr-TR', { month: 'long' });
+  if (!v.buAyOdenenler.length) return '<div class="mh-bos">' + ay + ' vadeli kalemlerden henüz ödenen yok.</div>';
+  const gunAy = iso => parseLocalDate(iso).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+  return '<div class="mh-bos" style="padding-top:0">Vadesi ' + ay + ' olan kalemlere yapılan ödemeler. Satıra dokun = o ayın detayı.</div>'
+    + '<div class="mh-liste">' + v.buAyOdenenler.map(s => {
+      const p = s.p;
+      const tarihler = odemeTarihleri(p, window.actLog, window.paidItems);
+      const ne = tarihler.length
+        ? 'Ödendi: ' + tarihler.map(t => gunAy(t.tarih) + (tarihler.length > 1 && t.tutar ? ' (' + fmtA(t.tutar, t.para) + ')' : '')).join(', ')
+        : 'Ödeme tarihi kayıtlı değil (eski kayıt)';
+      const pid = p.personId && (window.persons || []).some(x => x.id === p.personId) ? p.personId : '';
+      const ad = (pid && (window.persons.find(x => x.id === pid) || {}).name) || p.name || '';
+      return '<button class="mh-satir" data-key="' + esc(_rowKey(p)) + '" data-ay="' + String(p.date).slice(0, 7) + '">'
+        + '<span class="mh-avatar' + (p._cid ? ' kredi' : '') + '">' + esc(_bas(ad)) + '</span>'
+        + '<span class="mh-orta"><span class="mh-ad">' + esc(ad) + '</span>'
+        + '<span class="mh-alt">' + esc(_etiket(p)) + (_etiket(p) ? ' · ' : '') + 'vade ' + _ayAdi(p.date) + '</span>'
+        + '<span class="mh-alt">' + esc(ne) + '</span></span>'
+        + '<span class="mh-sag"><span class="mh-tutar">' + fmt(s.odenen) + '</span>'
+        + (s.odenen < s.tam - 0.5 ? '<span class="mh-kismi">kısmi</span>' : '') + '</span>'
+        + '</button>';
+    }).join('') + '</div>';
+}
+
 // ── Alt menü + sayfalar ────────────────────────────────────────────────────
 function _kisiListesiHTML() {
   const esc = window.esc;
@@ -141,6 +190,7 @@ function mobilIslem(islem) {
   switch (islem) {
     case 'hizli': M.open('MOB_HIZLI'); break;
     case 'diger': M.open('MOB_DIGER'); break;
+    case 'odenen': $('MOB_ODENEN_LISTE').innerHTML = _odenenlerHTML(); M.open('MOB_ODENEN'); break;
     case 'ara': M.closeAll(); M.open('SRCHMOD'); setTimeout(() => { const i = $('SRCHINP'); if (i) i.focus(); }, 120); break;
     case 'ode': {
       M.closeAll();
@@ -189,6 +239,8 @@ document.addEventListener('click', e => {
     setTimeout(() => window.openCariYeni && window.openCariYeni(), 60);
     return;
   }
+  const od = e.target.closest('#MOB_ODENEN .mh-satir');
+  if (od) { window.ModalManager.closeAll(); window.openCell(encodeURIComponent(od.dataset.key), od.dataset.ay); return; }
   const s = e.target.closest('#MOB_HOME .mh-satir');
   if (s) {
     // v8.236: avatar/isim -> cari kart; tutar tarafı -> o ayın detayı (öde/ertele)

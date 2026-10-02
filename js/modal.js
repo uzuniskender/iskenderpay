@@ -115,6 +115,19 @@ function closeAll() {
   document.body.style.overflow = '';
 }
 
+// Kaydırma kilidi kendini onarır: açık pencere kalmadıysa (kayıt dışı kapanma, yeniden çizim,
+// silinen öğe) gövde kilitli kalmasın. Serdar (2 Eki): "mobilde aşağı kaydırma yapamıyorum".
+function _kilitOnar() {
+  _open.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el || !el.classList.contains('open')) _open.delete(id);
+  });
+  if (_open.size === 0 && document.body.style.overflow === 'hidden') document.body.style.overflow = '';
+}
+document.addEventListener('pointerdown', _kilitOnar, { capture: true, passive: true });
+document.addEventListener('visibilitychange', _kilitOnar);
+window.addEventListener('pageshow', _kilitOnar);
+
 // Click-outside + data-modal-open/close attribute desteği
 document.addEventListener('click', e => {
   if ((e.target.classList.contains('mov') || e.target.classList.contains('dov')) && e.target.id) {
