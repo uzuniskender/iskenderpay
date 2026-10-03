@@ -181,6 +181,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
       </div>
       <div class="ozet-cards" id="OC"></div>
 
+      <button type="button" id="OZET_BAS" class="ozet-bas" style="display:none" onclick="ozetAcKapa()"></button>
       <div id="CRED_SUM" style="display:none;margin:0 0 10px"></div>
       <div id="HAFTA" style="margin:0 0 10px"></div>
       <div class="sec" style="padding-bottom:70px">
@@ -490,8 +491,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.2306';
-var APP_BUILD   = '20261003-6d11451';
+var APP_VERSION = 'v8.2307';
+var APP_BUILD   = '20261003-6734fa7';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {

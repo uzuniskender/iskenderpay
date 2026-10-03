@@ -510,7 +510,7 @@ function renderCredSummary() {
   // Tum hesap + display name Hesap.krediler'a delege (plan matrisiyle tutarli)
   // v8.244: tamamlanmis krediler ana ekranda gosterilmez (cari kartta duruyor).
   const list = window.Hesap.krediler().filter(k => !k.done);
-  if (!list.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  if (!list.length) { el.style.display = 'none'; el.innerHTML = ''; if (window.renderOzetBaslik) window.renderOzetBaslik(); return; }
   const cards = list.map(({cred, dispName, remaining, bekleyen, pct, nextPay, nextDays, overdueCount, lastDate, done}) => {
     const pctColor = pct>=80?'var(--ok)':pct>=50?'var(--blue)':'var(--ora)';
     const nextStr  = nextPay?window.fmtD(nextPay.date):'✓';
@@ -550,21 +550,12 @@ function renderCredSummary() {
     </div>`;
   }).join('');
   el.style.display = '';
-  // v8.244: varsayilan KAPALI (tek satir ozet); basliga dokun = kartlar acilir/kapanir.
-  // Baslik <button>: telefon CSS'i '#CRED_SUM > div:last-child' kart serisini hedefliyor.
-  const topKalan = list.reduce((a, k) => a + (k.bekleyen || 0), 0);
-  const gecikti = list.reduce((a, k) => a + (k.overdueCount || 0), 0);
-  const siradaki = list.filter(k => k.nextPay && k.nextPay.date).map(k => k.nextPay.date).sort((a, b) => window.parseLocalDate(a) - window.parseLocalDate(b))[0];
-  const ozet = list.length + ' kredi · kalan ' + window.fmt(topKalan)
-    + (gecikti ? ' · <span style="color:var(--danger)">⚠ ' + gecikti + ' gecikti</span>' : siradaki ? ' · sıradaki ' + window.fmtD(siradaki) : '');
-  el.innerHTML = `<button type="button" data-cred-toggle aria-expanded="${_credSumAcik}" style="all:unset;box-sizing:border-box;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;padding:8px 10px;background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;margin-bottom:${_credSumAcik ? '8px' : '0'}">
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.8px">KREDİLER</b> <span style="font-size:12px;color:var(--txt)">${ozet}</span></span>
-      <span style="flex-shrink:0;color:var(--muted);font-size:12px">${_credSumAcik ? '▾ Gizle' : '▸ Aç'}</span>
-    </button>${_credSumAcik ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px">${cards}</div>` : ''}`;
+  el.innerHTML = `<div style="font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin-bottom:8px">KREDİLER</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px">${cards}</div>`;
+  // v8.245: ac/kapa ortak ozet basliginda (ui-plan-render.js#renderOzetBaslik)
+  if (window.renderOzetBaslik) window.renderOzetBaslik();
   // v8.165: cred karta click → plan DV modal (openRow) — taksit takvimi zaten orada
   if (!_credSumHandlerAttached) {
     el.addEventListener('click', e => {
-      if (e.target.closest('[data-cred-toggle]')) { _credSumAcik = !_credSumAcik; renderCredSummary(); return; }
       const card = e.target.closest('[data-cred-id]');
       if (card && card.dataset.credId && window.openRow) {
         window.openRow(encodeURIComponent('cred_'+card.dataset.credId));
@@ -574,7 +565,6 @@ function renderCredSummary() {
   }
 }
 let _credSumHandlerAttached = false;
-let _credSumAcik = false; // v8.244: oturum ici; her acilista kapali baslar
 window.renderCredSummary = renderCredSummary;
 
 // ── STORE EVENT LISTENER (v9.0) ─────────────────────────────────────────────

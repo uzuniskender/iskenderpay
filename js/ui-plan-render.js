@@ -220,7 +220,41 @@ function render() {
 
   // Alt widget'lar (hafta + sıradaki)
   _renderWidgets(all, now, soon7);
+  renderOzetBaslik(all);
   // renderCredSummary decoupled (v9.0): ui-pay.js listener cagiriyor
+}
+
+// ── ÖZET BAŞLIĞI (v8.245) ─────────────────
+// Serdar (3 Eki): kredi kartları + GECİKMİŞ + BU HAFTA "tamamını gizle" -> tek satır başlık,
+// varsayılan KAPALI, dokun = üçü birlikte açılır (body.ozet-acik; app.css). Oturum içi durum.
+// Telefonda yalnız kredi kısmı görünür (gecikmiş/yaklaşan zaten #MOB_HOME'da).
+function ozetSayilari(all) {
+  const today = todayMidnight();
+  const soon7 = new Date(today.getTime() + 7*24*60*60*1000);
+  const acik = p => (p.status||'pending') !== 'paid' && !p._cid;
+  const gec = all.filter(p => acik(p) && window.parseLocalDate(p.date) < today).length;
+  const hafta = all.filter(p => { if (!acik(p)) return false; const d = window.parseLocalDate(p.date); return d >= today && d <= soon7; }).length;
+  const kr = window.Hesap && window.creds && window.creds.length ? window.Hesap.krediler().filter(k => !k.done) : [];
+  return { gec, hafta, kredi: kr.length, krediKalan: kr.reduce((a, k) => a + (k.bekleyen || 0), 0) };
+}
+function renderOzetBaslik(all) {
+  const el = document.getElementById('OZET_BAS');
+  if (!el) return;
+  const s = ozetSayilari(all || getAllItems());
+  if (!s.kredi && !s.gec && !s.hafta) { el.style.display = 'none'; return; }
+  const acik = document.body.classList.contains('ozet-acik');
+  const parca = [];
+  if (s.kredi) parca.push('<span><span class="ob-et">KREDİLER</span> ' + s.kredi + ' · ' + window.fmt(s.krediKalan) + '</span>');
+  if (s.gec) parca.push('<span class="yalniz-masa" style="color:#fca5a5">⚠ Gecikmiş ' + s.gec + '</span>');
+  if (s.hafta) parca.push('<span class="yalniz-masa" style="color:#fcd34d">⚡ Bu hafta ' + s.hafta + '</span>');
+  el.className = 'ozet-bas' + (s.kredi ? '' : ' kredisiz');
+  el.setAttribute('aria-expanded', String(acik));
+  el.innerHTML = '<span class="ob-sol">' + parca.join('<span class="yalniz-masa"> · </span>') + '</span><span class="ob-sag">' + (acik ? '▾ Gizle' : '▸ Aç') + '</span>';
+  el.style.display = '';
+}
+function ozetAcKapa() {
+  document.body.classList.toggle('ozet-acik');
+  renderOzetBaslik();
 }
 
 // ── HAFTA WİDGET ──────────────────────────
@@ -247,8 +281,6 @@ function renderHaftaWidget(all, now, soon7) {
     const d = window.parseLocalDate(p.date);
     return d >= today && d <= soon7mid;
   }).sort((a,b) => window.parseLocalDate(a.date) - window.parseLocalDate(b.date));
-
-  if (!yaklaşan.length) { el.innerHTML = ''; return; }
 
   const rows = yaklaşan.map(p => {
     const d = window.parseLocalDate(p.date);
@@ -325,3 +357,5 @@ window.buildMx           = buildMx;
 window.render            = render;
 window.renderHaftaWidget = renderHaftaWidget;
 window.renderGecWidget   = renderGecWidget;
+window.renderOzetBaslik  = renderOzetBaslik;
+window.ozetAcKapa        = ozetAcKapa;

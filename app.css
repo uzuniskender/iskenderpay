@@ -672,3 +672,17 @@ body.plan-fs-on #PLANWRAP::before {
 .log-eylem .btn small{display:block;font-size:11px;font-weight:400;opacity:.75;margin-top:2px}
 .log-sil-baslik{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-top:8px}
 .log-eylem .btn:disabled,.log-sec-alt .btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* v8.245: KREDİLER + GECİKMİŞ + BU HAFTA tek başlık altında, varsayılan KAPALI (ui-plan-render.js#renderOzetBaslik) */
+body:not(.ozet-acik) #CRED_SUM, body:not(.ozet-acik) #HAFTA{display:none!important}
+.ozet-bas{box-sizing:border-box;width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;
+  padding:9px 12px;margin:0 0 10px;background:var(--surf2);border:1px solid var(--bdr);border-radius:10px;color:var(--txt);font:600 12px/1.3 'Inter',sans-serif;text-align:left}
+.ozet-bas .ob-sol{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ozet-bas .ob-sag{flex-shrink:0;color:var(--muted);font-size:12px}
+.ozet-bas .ob-et{font-size:10px;font-weight:700;letter-spacing:.8px;color:var(--muted)}
+@media (max-width:767px), (pointer:coarse) and (max-height:540px){
+  .ozet-bas{width:calc(100% - 32px);margin:18px 16px 6px}
+  .ozet-bas .yalniz-masa{display:none}
+  .ozet-bas.kredisiz{display:none!important}
+}
+@media (orientation: landscape) and (max-height: 600px){ #OZET_BAS{display:none!important} }
