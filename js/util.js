@@ -94,6 +94,21 @@ export function maxAheadMonths(all, now) {
   return maxDiff + 1;
 }
 
+// v8.244: Aylık Plan penceresi. aheadRaw: 'all' | '3' | '18' ...
+// Sayısal pencerede (N ay) pencereyi aşan ödeme varsa ilk N-1 ay ayrı sütun,
+// N. sütun "Sonrası" (o aydan itibaren tüm aylar toplamı). Aşan yoksa N ay ayrı.
+// Dönüş: { tekAy: ayrı gösterilecek ileri ay sayısı (bu ay dahil), sinirMK: 'YYYY-MM' | null }
+export const PLAN_VARSAYILAN_AY = 18;
+export function planPenceresi(all, now, aheadRaw) {
+  const ref = now || new Date();
+  const enUzak = maxAheadMonths(all, ref);
+  if (aheadRaw === 'all') return { tekAy: enUzak, sinirMK: null };
+  const n = parseInt(aheadRaw) || PLAN_VARSAYILAN_AY;
+  if (enUzak <= n) return { tekAy: n, sinirMK: null };
+  const d = new Date(ref.getFullYear(), ref.getMonth() + n - 1, 1);
+  return { tekAy: n - 1, sinirMK: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') };
+}
+
 // ── Ödeme durum yardımcıları ─────────────────────────────────────────────────
 export function isOD(p) {
   return (p.status || 'pending') !== 'paid' && parseLocalDate(p.date) < todayMidnight();

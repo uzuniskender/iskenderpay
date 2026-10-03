@@ -196,10 +196,11 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
               <option value="name">🔤 İsme Göre</option>
             </select>
             <select id="AH" onchange="chAhead(this.value)" style="background:var(--surf2);border:1px solid var(--bdr);border-radius:7px;padding:5px 9px;color:var(--txt);font-family:'Inter',sans-serif;font-size:12px;font-weight:600;outline:none">
-              <option value="all" selected>Tümü</option>
+              <option value="all">Tümü</option>
               <option value="3">3 ay</option>
               <option value="6">6 ay</option>
               <option value="12">12 ay</option>
+              <option value="18" selected>18 ay</option>
               <option value="24">24 ay</option>
               <option value="36">36 ay</option>
             </select>
@@ -489,8 +490,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.2300';
-var APP_BUILD   = '20261003-ee62f7f';
+var APP_VERSION = 'v8.2306';
+var APP_BUILD   = '20261003-6d11451';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {

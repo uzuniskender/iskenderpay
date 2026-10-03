@@ -2,7 +2,7 @@
 // Veri toplama (getAllItems, buildMx), ana matris render'ı, hafta widget'ı,
 // store:change event listener. ui-plan.js'ten v8.150'de ayrıştırıldı.
 
-import { todayMidnight, toTRY, maxAheadMonths, araNormalize } from './util.js';
+import { todayMidnight, toTRY, planPenceresi, araNormalize } from './util.js';
 import { kalemOzet } from './para.js';
 
 // ── DATA / HESAPLAMA ─────────────────────────
@@ -108,14 +108,13 @@ function render() {
   _renderSummaryCards(ozet, yaklaşanN, now);
   const mx = buildMx(all);
   // v5-ahead === 'all' -> ileri pencere = en uzak odemeye kadar (maxAheadMonths).
-  // Sayisal deger -> o kadar ay. Eski/bozuk deger -> 6 guvenli geri-cekilme.
-  const aheadRaw = localStorage.getItem('v5-ahead') || 'all';
-  const aheadVal = aheadRaw === 'all'
-    ? maxAheadMonths(all, now)
-    : (parseInt(aheadRaw) || 6);
+  // v8.244: sayisal deger (varsayilan 18) -> N-1 ay ayri + N. sutun "Sonrasi" (pencereyi asan
+  // tum aylarin toplami; asan yoksa N ay ayri). Serdar: "ilk 18 ay, 18. sutunda toplam".
+  const aheadRaw = localStorage.getItem('v5-ahead') || '18';
+  const { tekAy, sinirMK } = planPenceresi(all, now, aheadRaw);
   const monthSet = new Set();
   const nowY=now.getFullYear(), nowM=now.getMonth();
-  for(let i=0;i<aheadVal;i++){const d=new Date(nowY,nowM+i,1);monthSet.add(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
+  for(let i=0;i<tekAy;i++){const d=new Date(nowY,nowM+i,1);monthSet.add(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));}
   all.forEach(p=>{const d=window.parseLocalDate(p.date);const mk=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');const pY=d.getFullYear(),pM=d.getMonth();if(pY<nowY||(pY===nowY&&pM<nowM))monthSet.add(mk);});
   const fltEl = document.getElementById('FLT');
   const fltVal = fltEl ? araNormalize(fltEl.value) : '';
@@ -159,10 +158,19 @@ function render() {
     tb.style.borderColor = showPaid ? 'rgba(74,222,128,.3)' : 'var(--bdr)';
     tb.textContent = showPaid ? '✓ Ödendiler gizle' : '✓ Ödendiler';
   }
+  // v8.244: "Sonrasi" hucresi = satirin sinirMK ve sonraki aylari (kalan TL toplami).
+  const sonra = {};
+  if (sinirMK) rowKeys.forEach(k => {
+    const mks = Object.keys(mx[k]).filter(x => !x.startsWith('_') && x >= sinirMK);
+    sonra[k] = { var: mks.some(m => mx[k][m]?.items?.length), kalan: mks.reduce((a, m) => a + (mx[k][m]?.kalan || 0), 0) };
+  });
+  const sonraGoster = !!sinirMK && rowKeys.some(k => sonra[k].var && (showPaid || sonra[k].kalan > 0));
+  const sonraLbl = sinirMK ? (() => { const [y, mo] = sinirMK.split('-'); return new Date(+y, +mo-1, 1).toLocaleDateString('tr-TR', {month:'short', year:'2-digit'}); })() : '';
   const mLbls=months.map(m=>{const[y,mo]=m.split('-');return new Date(+y,+mo-1,1).toLocaleDateString('tr-TR',{month:'short',year:'2-digit'});});
   const colTot=months.map(m=>rowKeys.reduce((s,k)=>{const c=mx[k]&&mx[k][m];return c?s+c.kalan:s;},0));
   let html='<table class="mtbl"><thead><tr><th class="rh">Ödeme</th><th style="min-width:32px;max-width:36px;width:32px">Gün</th>';
   months.forEach((m,i)=>html+=`<th${m===curMK?' style="color:var(--acc);font-weight:700"':''}>${mLbls[i]}</th>`);
+  if (sonraGoster) html+=`<th title="${sonraLbl} ve sonraki aylar">Sonrası</th>`;
   html+='<th>Toplam</th></tr></thead><tbody>';
   rowKeys.forEach(k=>{
     const dispName=mx[k]._displayName||mx[k]._name||k;
@@ -183,12 +191,20 @@ function render() {
       const cellContent = c.status==='paid' ? `<span style="font-size:14px">✓</span>` : `${window.fmt(c.kalan)}${ob2}`;
       html+=`<td class="${cls}" onclick="openCell('${encodeURIComponent(k)}','${m}')">${cellContent}</td>`;
     });
-    const rKalan=months.reduce((acc,m)=>{const c=mx[k]?.[m];return c?acc+c.kalan:acc;},0);
+    let rKalan=months.reduce((acc,m)=>{const c=mx[k]?.[m];return c?acc+c.kalan:acc;},0);
+    if (sonraGoster) {
+      const so = sonra[k];
+      const ic = !so.var ? '' : so.kalan > 0 ? window.fmt(so.kalan) : '<span style="font-size:14px">✓</span>';
+      html+=`<td class="${so.var ? (so.kalan > 0 ? 'cb' : 'cp') : 'ce'}" onclick="openRow('${encodeURIComponent(k)}')" title="${sonraLbl} ve sonrası — tüm aylar" style="font-weight:600">${ic}</td>`;
+      rKalan += so.kalan;
+    }
     html+=`<td style="font-weight:600;color:${rKalan===0?'var(--ok)':'var(--txt)'}">${rKalan===0?'✓':window.fmt(rKalan)}</td></tr>`;
   });
   html+=`<tr class="tot"><td class="rh">TOPLAM</td><td></td>`;
   colTot.forEach(t=>html+=`<td>${window.fmt(t)}</td>`);
-  html+=`<td>${window.fmt(colTot.reduce((a,b)=>a+b,0))}</td></tr></tbody></table>`;
+  const sonraTot = sonraGoster ? rowKeys.reduce((a,k)=>a+sonra[k].kalan,0) : 0;
+  if (sonraGoster) html+=`<td>${window.fmt(sonraTot)}</td>`;
+  html+=`<td>${window.fmt(colTot.reduce((a,b)=>a+b,0)+sonraTot)}</td></tr></tbody></table>`;
   document.getElementById('MAT').innerHTML = rowKeys.length ? html : '<div class="empty"><div class="ico">📋</div><p>Henüz ödeme yok.<br>+ butonuyla ekleyin.</p></div>';
 
   // Mevcut aya scroll

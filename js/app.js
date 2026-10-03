@@ -216,11 +216,10 @@ function addLog(type, title, detail, navTab, ctx) {
 
 // ── INIT ─────────────────────────────────────────────────────────────────────
 function initApp() {
-  // Acilis varsayilani: 'Tumu' = ileri pencere en uzak odemeye kadar (maxAheadMonths).
-  // Her acilis full-gorunume doner; oturum ici daraltma (chAhead -> '6' vb.) korunur,
-  // bir sonraki acilista yine 'Tumu'ye doner.
-  localStorage.setItem('v5-ahead', 'all');
-  const ah = 'all';
+  // Acilis varsayilani (v8.244): 18 ay = 17 ay + "Sonrasi" sutunu (util.js#planPenceresi).
+  // Oturum ici secim (chAhead -> 'all', '6' vb.) korunur, bir sonraki acilista yine 18'e doner.
+  localStorage.setItem('v5-ahead', '18');
+  const ah = '18';
   document.getElementById('AH').value = ah;
   const sortEl = document.getElementById('SORT');
   if (sortEl) sortEl.value = window.sortMode;
