@@ -183,6 +183,23 @@ export const Hesap = {
     return { tot, ok, bek, gec, okN, bekN, gecN, itemCount: buAy.length };
   },
 
+  // ── Tum aylardaki gecikmis (v8.246) ─────────────────────────────────────
+  // Serdar (3 Eki): "GECİKMİŞ NEDEN 0" — kart yalniz bu ayin gecikmisini sayiyordu, Eylul'den
+  // kalanlar gorunmuyordu. Olcut telefon ana sayfasiyla (mobil.js#anaSayfaVerisi) AYNI:
+  // odenmemis kalan > 0 ve vade < bugun; kredi taksitleri dahil.
+  gecikmisOzeti(opts) {
+    opts = opts || {};
+    const all = opts.all || _all();
+    let gec = 0, gecN = 0;
+    all.forEach(p => {
+      if (!window.isOD(p)) return;
+      const oz = kalemOzet(p, window.rates);
+      if (oz.kalan === 0) return;
+      gec += oz.kalanTL; gecN++;
+    });
+    return { gec, gecN };
+  },
+
   // Tarihi geçmiş ve ödenmemiş TÜM kalemler (yalnız bu ay değil) — başlık/rozet sayacı
   gecikmisSayisi(all) {
     return (all || _all()).filter(p => window.isOD(p) && kalemOzet(p, window.rates).kalan > 0).length;

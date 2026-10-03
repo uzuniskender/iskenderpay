@@ -52,12 +52,14 @@ function buildMx(all) {
 // ── RENDER HELPER'LARI (v8.154) ──────────
 // Özet bölgesi: OC (4 kart) + OHS (progress bar) + OD (tarih)
 function _renderSummaryCards(ozet, yaklaşanN, now) {
-  const {tot, ok, bek, gec, okN, bekN, gecN, itemCount} = ozet;
+  const {tot, ok, bek, okN, bekN, itemCount} = ozet;
+  // v8.246: Gecikmiş kartı TÜM aylar (bu ay değil) — telefon ana sayfasıyla aynı rakam
+  const { gec, gecN } = window.Hesap.gecikmisOzeti();
   document.getElementById('OC').innerHTML=`
     <div class="ocard t"><div class="lbl">Bu Ay Toplam</div><div class="val mono">${window.fmt(tot)}</div><div class="sub">${itemCount} ödeme</div></div>
     <div class="ocard p"><div class="lbl">Ödendi</div><div class="val">${window.fmt(ok)}</div><div class="sub">${okN} ödeme</div></div>
     <div class="ocard b"><div class="lbl">Bekliyor</div><div class="val">${window.fmt(bek)}</div><div class="sub">${yaklaşanN>0?`<span style="color:var(--ora)">⚡ ${yaklaşanN} bu hafta</span>`:bekN+' ödeme'}</div></div>
-    <div class="ocard g"><div class="lbl">Gecikmiş</div><div class="val">${window.fmt(gec)}</div><div class="sub">${gecN} ödeme</div></div>`;
+    <div class="ocard g"><div class="lbl">Gecikmiş</div><div class="val">${window.fmt(gec)}</div><div class="sub">${gecN} ödeme · tüm aylar</div></div>`;
   const pct = tot>0 ? Math.round((ok/tot)*100) : 0;
   const pctColor = pct>=100?'var(--ok)':pct>=60?'var(--blue)':pct>=30?'var(--ora)':'var(--danger)';
   document.getElementById('OHS').innerHTML = `<div style="display:flex;align-items:center;gap:8px">
