@@ -160,23 +160,22 @@ function openCell(keyEnc,month) {
   const cellPaidHistory = (window.paidItems||[]).filter(pi =>
     c.items.some(x => String(x.id) === String(pi.id) || (x.name === pi.name && pi.date && pi.date.startsWith(month.slice(0,7))))
   );
+  // v8.247: Serdar "detaylar otomatik gizli olsun, istersem tıklarım" — geçmiş ödemeler + istatistik kapalı gelir
   if (cellPaidHistory.length) {
-    h += `<div style="margin-top:10px;border-top:1px solid var(--bdr);padding-top:8px">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px">Yapılan Ödemeler</div>`;
+    h += `<details class="dgecmis"><summary>Yapılan Ödemeler (${cellPaidHistory.length})</summary>`;
     cellPaidHistory.forEach(pi => {
       h += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;color:var(--muted)">
         <span>${window.fmtD(pi.date||'')}</span>
         <span style="color:var(--ok);font-family:'IBM Plex Mono',monospace;font-weight:600">${window.fmt(pi.paid||0)}</span>
       </div>`;
     });
-    h += `</div>`;
+    h += `</details>`;
   }
 
   // v8.161: o kişinin/grubun bu ay öncesi geçmiş istatistiği
   const insights = _buildPersonHistory(c.items[0], month);
   if (insights) {
-    h += `<div style="margin-top:10px;border-top:1px solid var(--bdr);padding-top:8px">
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px">İstatistik (${insights.totalCount} önceki ödeme)</div>
+    h += `<details class="dgecmis"><summary>İstatistik (${insights.totalCount} önceki ödeme)</summary>
       <div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0">
         <span style="color:var(--muted)">Ortalama tutar</span>
         <span style="font-family:'IBM Plex Mono',monospace;font-weight:600">${window.fmt(insights.avgAmt)}</span>
@@ -193,7 +192,7 @@ function openCell(keyEnc,month) {
         </div>`;
       });
     }
-    h += `</div>`;
+    h += `</details>`;
   }
 
   h+=`<div class="dacts">

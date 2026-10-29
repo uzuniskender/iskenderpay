@@ -189,6 +189,7 @@ export function ertelePlani(kalemler, secKey, yeniTarih, kapsam) {
   const sec = (kalemler || []).find(k => k.key === secKey);
   if (!sec) throw new Error('Kalem bulunamadı.');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(yeniTarih || ''))) throw new Error('Yeni tarih seçin.');
+  if (kapsam === 'gun') return odemeGunuPlani(kalemler, Number(String(yeniTarih).slice(8, 10)));
   if ((sec.obj.status || 'pending') === 'paid') throw new Error('Ödenmiş kalem ertelenemez.');
   if (String(yeniTarih) <= String(sec.obj.date)) throw new Error('Yeni tarih mevcut tarihten (' + sec.obj.date + ') sonra olmalı.');
   const fark = ayFarki(sec.obj.date, yeniTarih);
@@ -201,6 +202,24 @@ export function ertelePlani(kalemler, secKey, yeniTarih, kapsam) {
       out.push({ key: k.key, eski: k.obj.date, yeni: ayTarihi(k.obj.date, fark) });
     });
   }
+  return out;
+}
+
+// v8.247: ÖDEME GÜNÜ — borcun ödenmemiş TÜM kalemleri kendi ayında kalır, günü `gun` olur
+// (ay kısaysa ayın son günü). Ödenmiş kaleme ve tutarlara dokunmaz. Serdar: "ödeme tarihi ayın 5'i olsun".
+export function odemeGunuPlani(kalemler, gun) {
+  if (!(gun >= 1 && gun <= 31)) throw new Error('Gün seçin.');
+  const out = [];
+  (kalemler || []).forEach(k => {
+    if ((k.obj.status || 'pending') === 'paid') return;
+    const eski = String(k.obj.date || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eski)) return;
+    const y = +eski.slice(0, 4), m = +eski.slice(5, 7);
+    const sonGun = new Date(y, m, 0).getDate();
+    const yeni = eski.slice(0, 8) + String(Math.min(gun, sonGun)).padStart(2, '0');
+    if (yeni !== eski) out.push({ key: k.key, eski, yeni });
+  });
+  if (!out.length) throw new Error('Ödenmemiş kalemlerin günü zaten ayın ' + gun + '. günü.');
   return out;
 }
 
@@ -512,6 +531,8 @@ function cerOnizle() {
     const plan = ertelePlani(_erteleKalemleri(h), rk, $('CER_DATE').value, $('CER_KAPSAM').value);
     $('CER_PREV').innerHTML = plan.length + ' kalem: ' + plan.slice(0, 4).map(p => _tarihUzun(p.eski) + ' → <b>' + _tarihUzun(p.yeni) + '</b>').join(' · ')
       + (plan.length > 4 ? ' …' : '') + '<br><span style="color:var(--muted)">Tutarlar ve toplam borç değişmez.</span>';
+    const ok = document.querySelector('#CARI_ERT .brow .bs');
+    if (ok) ok.textContent = $('CER_KAPSAM').value === 'gun' ? 'Günü Değiştir' : 'Ertele';
   } catch (e) { $('CER_PREV').innerHTML = '<span style="color:var(--danger)">' + window.esc(e.message) + '</span>'; }
 }
 
@@ -530,7 +551,8 @@ function saveCariErtele() {
   window.Store.tx(() => {
     plan.forEach(p => { const k = kalemler.find(x => x.key === p.key); if (k) window.Store.mutateItem(k.obj, { date: p.yeni }); });
     if (h.cred) h.cred.pays.sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.idx - b.idx);
-    window.addLog('plan_edit', 'Ertelendi', kisiAd + (etiket ? ' (' + etiket + ')' : '') + ' · ' + _tarihUzun(plan[0].eski) + ' → ' + _tarihUzun(plan[0].yeni) + (plan.length > 1 ? ' (+' + (plan.length - 1) + ' sonraki kalem aynı farkla)' : ''), 2, ctx);
+    if ($('CER_KAPSAM').value === 'gun') window.addLog('plan_edit', 'Ödeme günü değişti', kisiAd + (etiket ? ' (' + etiket + ')' : '') + ' · ' + plan.length + ' ödenmemiş kalem ayın ' + Number($('CER_DATE').value.slice(8, 10)) + '. gününe alındı', 2, ctx);
+    else window.addLog('plan_edit', 'Ertelendi', kisiAd + (etiket ? ' (' + etiket + ')' : '') + ' · ' + _tarihUzun(plan[0].eski) + ' → ' + _tarihUzun(plan[0].yeni) + (plan.length > 1 ? ' (+' + (plan.length - 1) + ' sonraki kalem aynı farkla)' : ''), 2, ctx);
   });
   ModalManager.close('CARI_ERT');
 }

@@ -686,3 +686,43 @@ body:not(.ozet-acik) #CRED_SUM, body:not(.ozet-acik) #HAFTA{display:none!importa
   .ozet-bas.kredisiz{display:none!important}
 }
 @media (orientation: landscape) and (max-height: 600px){ #OZET_BAS{display:none!important} }
+
+/* v8.247 — Kaza namazı takvimi (js/kaza.js) */
+.kz-modal{max-width:560px}
+.kz-ozet{background:var(--surf2);border:1px solid var(--bdr);border-radius:14px;padding:12px;display:grid;gap:10px;margin-bottom:10px}
+.kz-sayilar{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-variant-numeric:tabular-nums}
+.kz-sayilar b{display:block;font-size:20px;color:var(--txt)}
+.kz-sayilar span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.kz-cubuk{height:7px;background:var(--bg);border-radius:4px;overflow:hidden}
+.kz-cubuk i{display:block;height:100%;width:0;background:var(--ok)}
+.kz-vakit{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;text-align:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.kz-vakit b{display:block;font-size:13px;color:var(--txt)}
+.kz-serit{position:sticky;top:-1px;z-index:3;background:var(--surf);padding:6px 0;display:grid;gap:8px}
+.kz-dugmeler{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.kz-dugmeler .btn{padding:10px 4px;font-size:12px;line-height:1.15;min-height:44px}
+.kz-ayrow{display:flex;gap:6px;align-items:center}
+.kz-ayrow .btn{flex:none;width:46px;min-height:42px;padding:0;font-size:20px}
+.kz-ayrow select{flex:1;min-width:0;margin:0}
+.kz-secim{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap;margin:6px 0}
+.kz-secim input[type=checkbox]{width:20px;height:20px;accent-color:var(--ok)}
+.kz-baslik,.kz-gun{display:grid;grid-template-columns:64px repeat(5,1fr);gap:5px;align-items:center}
+.kz-baslik{font-size:10px;color:var(--muted);text-align:center;text-transform:uppercase;letter-spacing:.4px}
+.kz-liste{display:grid;gap:5px}
+.kz-gun{padding:4px 6px;border-radius:10px;background:var(--surf2);border:1px solid var(--bdr)}
+.kz-gun.bugun{box-shadow:inset 0 0 0 2px var(--acc)}
+.kz-gun.vurgu{animation:kzVurgu 1.4s ease-out}
+@keyframes kzVurgu{from{background:rgba(74,222,128,.18)}}
+.kz-tarih{font-size:13px;line-height:1.1;font-variant-numeric:tabular-nums;color:var(--txt)}
+.kz-tarih small{display:block;font-size:10px;color:var(--muted)}
+.kz-vk{height:44px;border-radius:9px;border:1.5px solid rgba(255,255,255,.14);background:transparent;color:var(--ok);font-size:20px;font-weight:700;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.kz-vk.on{background:var(--ok);border-color:var(--ok);color:#0f0e17}
+.kz-bos{color:var(--muted);text-align:center;padding:22px 8px;border:1px dashed var(--bdr);border-radius:12px}
+.kz-durum{font-size:12px;color:var(--muted);min-height:16px;margin-top:6px}
+@media (prefers-reduced-motion:reduce){.kz-gun.vurgu{animation:none}}
+
+/* v8.247 — kişi formunda sil */
+.prm-sil{width:100%;margin-top:12px;background:transparent;border:1px solid rgba(248,113,113,.4);color:var(--danger);min-height:44px}
+
+/* v8.247 — hücre penceresinde geçmiş ödemeler / istatistik kapalı gelir */
+.dgecmis{margin-top:10px;border-top:1px solid var(--bdr);padding-top:8px}
+.dgecmis summary{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;cursor:pointer;padding:6px 0;min-height:32px;list-style-position:inside}

@@ -127,6 +127,8 @@ function openAddPerson() {
   document.getElementById('PREID').value = '';
   document.getElementById('PRMT').innerHTML = 'Kişi <span>Ekle</span>';
   ['PRNAME','PRDESC','PRTEL','PRIBAN','PRMAIL','PRFIRMA','PRNOT'].forEach(id => _set(id, ''));
+  _silDugmesi(null);
+  _formBicimle();
   ModalManager.open('PRM');
 }
 
@@ -141,7 +143,41 @@ function editPerson(i) {
   _set('PRMAIL', p.email || '');
   _set('PRFIRMA', p.company || '');
   _set('PRNOT', p.note || '');
+  _silDugmesi(p);
+  _formBicimle();
   ModalManager.open('PRM');
+}
+
+// v8.247: Serdar "rehberden isim silme yok" — düzenleme formunda sil düğmesi (Arşivle / Kalıcı Sil seçimi)
+function _silDugmesi(p) {
+  const b = document.getElementById('PRSIL');
+  if (b) b.hidden = !(p && p.id);
+}
+function kisiyiSilFormdan() {
+  const i = parseInt(document.getElementById('PREID').value);
+  const p = (window.persons || [])[i];
+  if (!p) return;
+  window.closeMov('PRM');
+  delPerson(i);
+}
+
+// v8.247: ad ve şirket yazarken büyük harfe döner; telefon kutudan çıkınca 05XX XXX XX XX olur
+// (eski Rehber penceresinde böyleydi, Kişiler'e taşınınca kaybolmuştu)
+const _buyukHarf = el => {
+  const bas = el.selectionStart, son = el.selectionEnd, yeni = el.value.toLocaleUpperCase('tr');
+  if (yeni !== el.value) { el.value = yeni; try { el.setSelectionRange(bas, son); } catch (e) {} }
+};
+const _telBicimle = el => {
+  if (!window.normPhone) return;
+  el.value = el.value.split(/[,;\n]/).map(x => x.trim()).filter(Boolean).map(window.normPhone).join(', ');
+};
+function _formBicimle() {
+  ['PRNAME', 'PRFIRMA'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el._buyuk) { el._buyuk = true; el.addEventListener('input', () => _buyukHarf(el)); }
+  });
+  const tel = document.getElementById('PRTEL');
+  if (tel && !tel._bicim) { tel._bicim = true; tel.addEventListener('blur', () => _telBicimle(tel)); }
 }
 
 // Formdaki iletişim alanları (form alanı yoksa undefined -> mevcut değer korunur)
@@ -158,13 +194,13 @@ function _iletisimFormu(eski) {
   }
   const iban = _val('PRIBAN'); if (iban !== undefined) out.iban = iban.toLocaleUpperCase('tr').replace(/\s+/g, '');
   const mail = _val('PRMAIL'); if (mail !== undefined) out.email = mail.trim();
-  const firma = _val('PRFIRMA'); if (firma !== undefined) out.company = firma.trim();
+  const firma = _val('PRFIRMA'); if (firma !== undefined) out.company = firma.trim().toLocaleUpperCase('tr');
   const not = _val('PRNOT'); if (not !== undefined) out.note = not.trim();
   return out;
 }
 
 function savePerson() {
-  const name = document.getElementById('PRNAME').value.trim();
+  const name = document.getElementById('PRNAME').value.trim().toLocaleUpperCase('tr');
   const desc = document.getElementById('PRDESC').value.trim();
   if (!name) { alert('İsim zorunlu'); return; }
   const eid = document.getElementById('PREID').value;
@@ -335,6 +371,7 @@ window.renderPersons      = renderPersons;
 window.updateDatalist     = updateDatalist;
 window.openAddPerson      = openAddPerson;
 window.savePerson         = savePerson;
+window.kisiyiSilFormdan   = kisiyiSilFormdan;
 window.saveHistItem       = saveHistItem;
 window.clrHist            = clrHist;
 window.editHistItem       = editHistItem;

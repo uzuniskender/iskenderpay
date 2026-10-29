@@ -98,6 +98,17 @@ onAuthStateChanged(_auth, (user) => {
 window._planDoc      = _planDoc;
 window._metaDoc      = _metaDoc;
 
+// v8.247: kaza namazı takvimi AYRI belgede (borç verisi bloğuna karışmaz); içerik şifreli (kaza.js)
+window._kazaOku = async function() {
+  if (!window.Store.fbUid) return null;
+  const snap = await getDoc(doc(_db, 'users', window.Store.fbUid + '_kaza'));
+  return snap.exists() ? snap.data().data : null;
+};
+window._kazaYaz = async function(enc) {
+  if (!window.Store.fbUid) return;
+  await setDoc(doc(_db, 'users', window.Store.fbUid + '_kaza'), { data: enc, updatedAt: Date.now() });
+};
+
 // Google ile giriş — popup kullan
 window.doGoogleLogin = async function() {
   try {

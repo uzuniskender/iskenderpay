@@ -1,6 +1,6 @@
 // sw.js — iskenderpay PWA cache (v8.214: salt-freeze.js — B0 auth-bagimsiz PIN salt)
 
-const CACHE = 'ip-static-6ad7f19';
+const CACHE = 'ip-static-d907013';
 const STATIC = [
   './',
   './index.html',
@@ -58,6 +58,8 @@ const STATIC = [
   './js/search.js',
   './js/rates-core.js',
   './js/altin-onizleme.js',
+  './js/kaza-core.js',
+  './js/kaza.js',
 ];
 
 self.addEventListener('install', e => {

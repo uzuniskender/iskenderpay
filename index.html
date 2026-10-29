@@ -83,6 +83,7 @@ body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellips
     import './js/kisi-ui.js';
     import './js/altin-onizleme.js';
     import './js/search.js';
+    import './js/kaza.js';
   </script>
 </head>
 <body>
@@ -491,8 +492,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.2350';
-var APP_BUILD   = '20261005-6ad7f19';
+var APP_VERSION = 'v8.5081';
+var APP_BUILD   = '20261029-d907013';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -619,6 +620,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button class="btn bc" data-modal-close="PRM">İptal</button>
       <button class="btn bs" onclick="savePerson()">Kaydet</button>
     </div>
+    <button type="button" class="btn prm-sil" id="PRSIL" onclick="kisiyiSilFormdan()" hidden>🗑 Bu kişiyi sil</button>
   </div>
 </div>
 
@@ -708,7 +710,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     <div class="frow">
       <div class="fg"><label class="fl">Yeni Tarih</label><input class="fi" id="CER_DATE" type="date" oninput="cerOnizle()"></div>
       <div class="fg"><label class="fl">Kapsam</label>
-        <select class="fi" id="CER_KAPSAM" onchange="cerOnizle()"><option value="tek">Yalnız bu ay/taksit</option><option value="sonraki">Bu ve sonrakiler (hepsi kayar)</option></select>
+        <select class="fi" id="CER_KAPSAM" onchange="cerOnizle()"><option value="tek">Yalnız bu ay/taksit</option><option value="sonraki">Bu ve sonrakiler (hepsi kayar)</option><option value="gun">Ödenmemiş tüm ayların günü bu gün olsun</option></select>
       </div>
     </div>
     <div id="CER_PREV" style="font-size:12px;margin:0 2px 10px;line-height:1.5"></div>
@@ -843,11 +845,47 @@ document.addEventListener('DOMContentLoaded',()=>{
       <button data-mh="ara"><span>🔍</span><b>Ara</b><small>Kişi, tutar, kayıt</small></button>
       <button data-mh="tablo"><span>📊</span><b>Aylık Tablo</b><small>Tüm ödemeler ay ay</small></button>
       <button data-mh="git3"><span>📝</span><b>Notlar</b><small>Şifreli notlar</small></button>
+      <button onclick="openKaza()"><span>🕌</span><b>Kaza Namazı</b><small>Kılınan vakte dokun, kalanı say</small></button>
       <button onclick="ModalManager.closeAll();openSaglama()"><span>🧮</span><b>Sağlama</b><small>Hesap tutuyor mu, bağsız kayıt var mı</small></button>
       <button data-mh="git5"><span>⚙️</span><b>Ayarlar</b><small>Şifre, kur, yedek, güncelleme</small></button>
       <button onclick="ModalManager.closeAll();kilitle()"><span>🔒</span><b>Kilitle</b><small>Şifre sorulsun</small></button>
       <button onclick="ModalManager.closeAll();doGoogleSignOut()" class="tehlike"><span>🚪</span><b>Çıkış</b><small>Hesaptan çık</small></button>
     </div>
+  </div>
+</div>
+
+<!-- KAZA NAMAZI TAKVİMİ (v8.247) — js/kaza.js -->
+<div class="mov" id="KAZA">
+  <div class="modal mob-sayfa kz-modal">
+    <div class="mhdl"></div>
+    <h2>Kaza <span>Namazı</span></h2>
+    <div class="kz-ozet">
+      <div class="kz-sayilar">
+        <div><b id="KZ_KALAN">–</b><span>Kalan vakit</span></div>
+        <div><b id="KZ_KILINAN">–</b><span>Kılınan</span></div>
+        <div><b id="KZ_ORAN">–</b><span>Tamamlanan</span></div>
+      </div>
+      <div class="kz-cubuk"><i id="KZ_CUBUK"></i></div>
+      <div class="kz-vakit" id="KZ_VAKIT"></div>
+    </div>
+    <div class="kz-serit">
+      <div class="kz-dugmeler">
+        <button class="btn bs" id="KZ_ILK">İlk eksik güne git</button>
+        <button class="btn bs" id="KZ_SON">Son eksik güne git</button>
+        <button class="btn bs" id="KZ_BUGUN">Bugüne git</button>
+      </div>
+      <div class="kz-ayrow">
+        <button class="btn bc" id="KZ_ONCEKI" aria-label="Önceki ay">‹</button>
+        <select class="fi" id="KZ_AY" aria-label="Ay seç"></select>
+        <button class="btn bc" id="KZ_SONRAKI" aria-label="Sonraki ay">›</button>
+      </div>
+      <label class="kz-secim"><input type="checkbox" id="KZ_GIZLE" checked> Beş vakti tamam olan günleri gizle</label>
+      <div class="kz-baslik"><span></span><span>Sabah</span><span>Öğle</span><span>İkindi</span><span>Akşam</span><span>Yatsı</span></div>
+    </div>
+    <div class="kz-liste" id="KZ_LISTE"></div>
+    <div class="kz-durum" id="KZ_DURUM" aria-live="polite"></div>
+    <div class="kz-secim"><label for="KZ_BAS">Takip başlangıcı</label><input class="fi" type="date" id="KZ_BAS" style="width:auto"></div>
+    <div class="brow"><button class="btn" data-modal-close="KAZA">Kapat</button></div>
   </div>
 </div>
 
