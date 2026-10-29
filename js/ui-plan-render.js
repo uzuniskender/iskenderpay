@@ -19,6 +19,17 @@ function getAllItems() {
 //   cell.kalan = hücrede ÖDENMEMİŞ kalan TL (tablo, sütun ve satır toplamları BUNU kullanır)
 // Eskiden bir ayda iki kalem varsa ve biri ödendiyse, ödenen de bekliyor gibi toplanıyordu.
 // Satır adı: kalem kişiye bağlıysa kişinin GÜNCEL adı (kişi adı değişince plan da değişir).
+// v8.250: satırın "gün" sütunu SIRADAKİ ÖDENMEMİŞ ayın günüdür (hepsi ödendiyse son ay).
+// Eskiden ilk ayın günüydü; ilk ay çoğu zaman ödenmiş olduğundan "Ödeme Günü" değişince planda eski gün kalıyordu.
+function satirGunu(row) {
+  const aylar = Object.keys(row).filter(x => !x.startsWith('_')).sort();
+  if (!aylar.length) return null;
+  const acik = aylar.find(m => (row[m].status || 'pending') !== 'paid') || aylar[aylar.length - 1];
+  const items = row[acik].items || [];
+  const k = items.find(p => kalemOzet(p, window.rates).kalan > 0) || items[0];
+  return k && k.date ? window.parseLocalDate(k.date).getDate() : null;
+}
+
 function buildMx(all) {
   const mx = {};
   const kisiAdi = new Map((window.persons || []).map(p => [p.id, p.name]));
@@ -126,7 +137,7 @@ function render() {
     rowKeys.sort((a,b)=>(mx[a]._name||'').localeCompare(mx[b]._name||'','tr'));
   } else {
     rowKeys.sort((a,b)=>{
-      const dayOf=k=>{const mks=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort();if(!mks.length)return 99;const items=mx[k][mks[0]]?.items||[];return items[0]?window.parseLocalDate(items[0].date).getDate():99;};
+      const dayOf=k=>satirGunu(mx[k])??99;
       const da=dayOf(a),db=dayOf(b);
       if(da!==db)return da-db;
       return (mx[a]._name||'').localeCompare(mx[b]._name||'','tr');
@@ -177,8 +188,7 @@ function render() {
   html+='<th>Toplam</th></tr></thead><tbody>';
   rowKeys.forEach(k=>{
     const dispName=mx[k]._displayName||mx[k]._name||k;
-    const _firstMk=Object.keys(mx[k]).filter(x=>!x.startsWith('_')).sort()[0];
-    const _dayNum=_firstMk&&mx[k][_firstMk]?.items?.[0]?.date?window.parseLocalDate(mx[k][_firstMk].items[0].date).getDate():'';
+    const _dayNum=satirGunu(mx[k])??'';
     // v8.234: satır adına dokun = kişinin CARİ KARTI (kişiye bağlı değilse eski satır detayı)
     const _adTik = mx[k]._personId && (window.persons||[]).some(p=>p.id===mx[k]._personId)
       ? `openCari('${window.esc(mx[k]._personId)}')` : `openRow('${encodeURIComponent(k)}')`;
