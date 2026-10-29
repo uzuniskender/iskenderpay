@@ -192,7 +192,7 @@ function kisiSilSec(pid) {
   document.getElementById('KS_ARSIV').disabled = borclu;
   document.getElementById('KS_ARSIV_NOT').textContent = borclu
     ? 'Ödenmemiş borcu var — önce borç bitmeli.'
-    : 'Listeden kalkar, geçmişi ve logları durur. Geri getirilebilir.';
+    : 'Listeden kalkar; geçmiş ödemeler ve loglar aynen kalır. Geri getirilebilir.';
   window.ModalManager.open('KISISIL');
 }
 

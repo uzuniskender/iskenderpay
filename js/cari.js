@@ -346,6 +346,7 @@ function _yukumlulukHTML(y, hareketler) {
     + (acikIlk ? '<button class="cari-btn ok" data-act="ode" data-ref="' + esc(refKey(acikIlk.ref)) + '">💰 Ödeme Gir</button>' : '')
     + '<button class="cari-btn" data-act="duzenle">✏️ Düzenle</button>'
     + (y.tip === 'odeme' ? '<button class="cari-btn" data-act="ayekle">➕ Ay Ekle</button>' : '')
+    + (y.tip === 'odeme' && String(y.key).startsWith('g_') ? '<button class="cari-btn" data-act="krediye">💳 Krediye Dönüştür</button>' : '')
     + (y.ozet.acikN && !(y.cred && y.cred.closed) ? '<button class="cari-btn" data-act="yapilandir">🔁 Yapılandır</button><button class="cari-btn" data-act="kapat">🏁 Erken Kapat</button>' : '')
     + '<button class="cari-btn" data-act="tasi" title="Bu borcu başka kişinin cari kartına taşı">↪ Taşı</button>'
     + '<button class="cari-btn sil" data-act="sil">🗑 Sil</button>'
@@ -419,6 +420,8 @@ function _tikla(ev) {
     case 'ayekle': if (y) openCariEk(y); break;
     case 'yapilandir': if (y) window.openRestructure(y.key); break;
     case 'kapat': if (y) window.openCloseCredit(y.key); break;
+    // v8.248: satır adı cari kartı açtığından plan satırındaki "Krediye Dönüştür" görünmüyordu
+    case 'krediye': if (y) { window.ModalManager.closeAll(); window.convertToCredit(encodeURIComponent(y.key)); } break;
     case 'sil': if (y) _borcSil(y); break;
     case 'kisisil': window.kisiSilSec && window.kisiSilSec(_pid); break;
     case 'birlestir': window.openBirlestir && window.openBirlestir(_pid); break;

@@ -60,7 +60,6 @@ function openRow(keyEnc) {
   h+=_borcIslemleri(key, mx[key]?._personId, dispName);
   h+=`<div class="dacts">
     <button class="dact da-edit" onclick="editByKey('${encodeURIComponent(key)}')">Düzenle</button>
-    ${!isCredRow?`<button class="dact da-edit" style="background:rgba(99,102,241,.15);border-color:rgba(99,102,241,.4);color:#a5b4fc" onclick="convertToCredit('${encodeURIComponent(key)}')">Krediye Dönüştür</button>`:''}
     <button class="dact da-del" onclick="delByKey('${encodeURIComponent(key)}')">Sil</button>
     <button class="dact da-close" onclick="closeDV()">Kapat</button>
   </div>`;
@@ -80,6 +79,7 @@ function _borcIslemleri(key, pid, ad, cariDugmesiYok) {
     + (kisiVar && !cariDugmesiYok ? `<button class="dact da-edit" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari Kart</button>` : '')
     + (acik && !(cred && cred.closed) ? `<button class="dact da-part" onclick="closeDV();setTimeout(()=>openRestructure('${k}'),50)">🔁 Yapılandır</button>`
       + `<button class="dact da-ok" onclick="closeDV();setTimeout(()=>openCloseCredit('${k}'),50)">🏁 Erken Kapat</button>` : '')
+    + (key.startsWith('g_') ? `<button class="dact da-edit" onclick="convertToCredit('${encodeURIComponent(key)}')">💳 Krediye Dönüştür</button>` : '')
     + `<button class="dact da-edit" onclick="closeDV();openBorcTasi(${kisiVar ? `'${window.esc(pid)}'` : 'null'},'${k}','${a}')">↪ Taşı</button>`
     + `</div>`;
 }

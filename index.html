@@ -492,8 +492,8 @@ var partialCtx=null;
 
 // visibilitychange → app.js startRealtimeSync içinde
 
-var APP_VERSION = 'v8.5081';
-var APP_BUILD   = '20261029-d907013';
+var APP_VERSION = 'v8.5082';
+var APP_BUILD   = '20261029-9582c54';
 
 // ── SERVICE WORKER ───────────────────────────────────────────────────────────
 if ('serviceWorker' in navigator) {
@@ -950,8 +950,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     <input type="hidden" id="KS_PID">
     <div id="KS_AD" style="font-size:15px;font-weight:700;margin-bottom:12px"></div>
     <div class="ks-secim">
-      <button type="button" id="KS_ARSIV" onclick="ModalManager.close('KISISIL');kisiArsivle(document.getElementById('KS_PID').value)"><span>🗄</span><b>Arşivle</b><small id="KS_ARSIV_NOT">Listeden kalkar, geçmişi ve logları durur.</small></button>
-      <button type="button" class="tehlike" onclick="ModalManager.close('KISISIL');kisiKaliciSil(document.getElementById('KS_PID').value)"><span>🗑</span><b>Kalıcı Sil</b><small>Kişi, borçları, kredileri, ödemeleri ve logları birlikte silinir. Şifre ister.</small></button>
+      <button type="button" id="KS_ARSIV" onclick="ModalManager.close('KISISIL');kisiArsivle(document.getElementById('KS_PID').value)"><span>🗄</span><b>Rehberden kaldır</b><small id="KS_ARSIV_NOT">Listeden kalkar; geçmiş ödemeler ve loglar aynen kalır.</small></button>
+      <button type="button" class="tehlike" onclick="ModalManager.close('KISISIL');kisiKaliciSil(document.getElementById('KS_PID').value)"><span>🗑</span><b>Her şeyiyle sil</b><small>Kişiyle birlikte geçmiş ödemeleri, borçları, kredileri ve logları da silinir. Şifre ister.</small></button>
     </div>
     <div class="brow"><button class="btn bc" type="button" data-modal-close="KISISIL">Vazgeç</button></div>
   </div>
