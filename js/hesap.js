@@ -83,6 +83,8 @@ function _displayNames(mx, keys) {
   // (2) Kredi satirlari "(Kredi)" tasir
   // v8.231: cari karttan aciklama verilmis kredi kendi adiyla gorunur ("ALI (Araç)"), yoksa "(Kredi)"
   allKeys.forEach(k => { if (k.startsWith('cred_')) dnMap[k] = dnMap[k] + ' (' + (meta[k].tag || 'Kredi') + ')'; });
+  // v8.249: cari karttan verilen plan adı her şeyin önündedir (aynı ad iki satırda varsa aşağıdaki kapı ayırır)
+  allKeys.forEach(k => { if (mx[k]._planAdi) dnMap[k] = mx[k]._planAdi; });
 
   // (3) TEK BENZERSIZLIK KAPISI — kademeli, her kademe sonrasi yeniden gruplanir
   const cakisanlar = () => {

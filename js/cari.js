@@ -67,7 +67,7 @@ export function yukumlulukler(person, pays, creds, rates, bugunISO, baseOf) {
   out.forEach(y => {
     y.kalemler.sort((a, b) => String(a.h.obj.date).localeCompare(String(b.h.obj.date)));
     const ilk = y.kalemler[0] && y.kalemler[0].h.obj;
-    y.etiket = y.tip === 'kredi' ? (y.cred.desc || 'Kredi') : ((ilk && (ilk.desc || ilk.category)) || 'Ödeme');
+    y.etiket = y.tip === 'kredi' ? (y.cred.planAdi || y.cred.desc || 'Kredi') : ((ilk && (ilk.planAdi || ilk.desc || ilk.category)) || 'Ödeme');
     const o = { kalan: 0, gecikmis: 0, odenen: 0, acikN: 0, gecikmisN: 0, toplamN: y.kalemler.length };
     y.kalemler.forEach(k => {
       k.oz = _kalemOzet(k.h, rates, bugunISO);
@@ -191,7 +191,9 @@ export function ertelePlani(kalemler, secKey, yeniTarih, kapsam) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(yeniTarih || ''))) throw new Error('Yeni tarih seçin.');
   if (kapsam === 'gun') return odemeGunuPlani(kalemler, Number(String(yeniTarih).slice(8, 10)));
   if ((sec.obj.status || 'pending') === 'paid') throw new Error('Ödenmiş kalem ertelenemez.');
-  if (String(yeniTarih) <= String(sec.obj.date)) throw new Error('Yeni tarih mevcut tarihten (' + sec.obj.date + ') sonra olmalı.');
+  if (String(yeniTarih) === String(sec.obj.date)) throw new Error('Yeni tarih mevcut tarihle aynı.');
+  // v8.249: tek kalem her yöne (öne de) alınabilir; "bu ve sonrakiler" yalnız ileri kayar
+  if (kapsam === 'sonraki' && String(yeniTarih) < String(sec.obj.date)) throw new Error('Hepsini kaydırmada yeni tarih mevcut tarihten (' + sec.obj.date + ') sonra olmalı.');
   const fark = ayFarki(sec.obj.date, yeniTarih);
   const out = [{ key: sec.key, eski: sec.obj.date, yeni: yeniTarih }];
   if (kapsam === 'sonraki' && fark > 0) {
@@ -345,6 +347,8 @@ function _yukumlulukHTML(y, hareketler) {
   h += '<div class="cari-aksiyon">'
     + (acikIlk ? '<button class="cari-btn ok" data-act="ode" data-ref="' + esc(refKey(acikIlk.ref)) + '">💰 Ödeme Gir</button>' : '')
     + '<button class="cari-btn" data-act="duzenle">✏️ Düzenle</button>'
+    + '<button class="cari-btn" data-act="planadi" title="Planda bu satırın görünen adı">🏷 Plandaki Adı</button>'
+    + (acikIlk ? '<button class="cari-btn" data-act="odemegunu" data-ref="' + esc(refKey(acikIlk.ref)) + '">📅 Ödeme Günü</button>' : '')
     + (y.tip === 'odeme' ? '<button class="cari-btn" data-act="ayekle">➕ Ay Ekle</button>' : '')
     + (y.tip === 'odeme' && String(y.key).startsWith('g_') ? '<button class="cari-btn" data-act="krediye">💳 Krediye Dönüştür</button>' : '')
     + (y.ozet.acikN && !(y.cred && y.cred.closed) ? '<button class="cari-btn" data-act="yapilandir">🔁 Yapılandır</button><button class="cari-btn" data-act="kapat">🏁 Erken Kapat</button>' : '')
@@ -421,6 +425,8 @@ function _tikla(ev) {
     case 'yapilandir': if (y) window.openRestructure(y.key); break;
     case 'kapat': if (y) window.openCloseCredit(y.key); break;
     // v8.248: satır adı cari kartı açtığından plan satırındaki "Krediye Dönüştür" görünmüyordu
+    case 'planadi': if (y) openPlanAdi(y); break;
+    case 'odemegunu': openCariErtele(el.dataset.ref, 'gun'); break;
     case 'krediye': if (y) { window.ModalManager.closeAll(); window.convertToCredit(encodeURIComponent(y.key)); } break;
     case 'sil': if (y) _borcSil(y); break;
     case 'kisisil': window.kisiSilSec && window.kisiSilSec(_pid); break;
@@ -496,8 +502,37 @@ function saveCariAy() {
   ModalManager.close('CARI_AY');
 }
 
+// ── PLANDAKİ AD (v8.249) ───────────────────────────────────────────────────
+// Serdar: "program saçma isimler vermiş; cari kartta planda görünmesini istediğim ismi yazmak istiyorum".
+// Ödeme grubunda her kaleme, kredide krediye `planAdi` yazılır; plan satırı (hesap.js#_displayNames)
+// ve cari kart sekmesi bunu gösterir. Boş bırakılırsa alan silinir, eski otomatik ad döner.
+let _planAdiKey = null;
+function openPlanAdi(y) {
+  _planAdiKey = y.key;
+  const mevcut = y.tip === 'kredi' ? (y.cred.planAdi || '') : ((y.kalemler[0] && y.kalemler[0].h.obj.planAdi) || '');
+  let dn = '';
+  try { dn = window.Hesap._displayNames(window.buildMx(window.getAllItems()))[y.key] || ''; } catch (e) {}
+  $('PLA_SIMDI').textContent = dn || y.etiket;
+  $('PLA_AD').value = mevcut || dn || '';
+  window.ModalManager.open('PLANADI');
+  setTimeout(() => { try { $('PLA_AD').focus(); $('PLA_AD').select(); } catch (e) {} }, 120);
+}
+
+function savePlanAdi() {
+  const y = _planAdiKey && _yBul(_planAdiKey);
+  if (!y) { alert('Borç bulunamadı.'); return; }
+  const ad = $('PLA_AD').value.trim().toLocaleUpperCase('tr');
+  const yaz = obj => window.Store.mutateItem(obj, { planAdi: ad || undefined });
+  window.Store.tx(() => {
+    if (y.tip === 'kredi') yaz(y.cred);
+    else y.kalemler.forEach(k => yaz(k.h.obj));
+    _log('plan_edit', 'Plandaki ad değişti', _kisi().name + ' · ' + (ad || 'otomatik ada döndü'), y);
+  });
+  window.ModalManager.close('PLANADI');
+}
+
 // ── ERTELE UI ──────────────────────────────────────────────────────────────
-function openCariErtele(refArg) {
+function openCariErtele(refArg, kapsamArg) {
   const rk = refArg || $('CA_REF').value;
   const h = hedefBul(refParse(rk), window.pays, window.creds);
   if (!h) { alert('Kayıt bulunamadı.'); return; }
@@ -512,7 +547,8 @@ function openCariErtele(refArg) {
   let aday = ayTarihi(toLocalISO(b.getFullYear(), b.getMonth(), 1).slice(0, 8) + String(gun).padStart(2, '0'), 1);
   if (aday <= String(o.date)) aday = ayTarihi(o.date, 1);
   $('CER_DATE').value = aday;
-  $('CER_KAPSAM').value = h.cred ? 'sonraki' : 'tek';
+  $('CER_KAPSAM').value = kapsamArg || 'tek';
+  if (kapsamArg === 'gun') $('CER_DATE').value = String(o.date).slice(0, 8) + '05';
   $('CER_INFO').textContent = (h.cred ? o.idx + '. taksit' : 'Ay') + ' · şu an ' + _tarihUzun(o.date) + ' · ' + window.fmtA(o.amount, h.cred ? 'TRY' : (o.currency || 'TRY'));
   cerOnizle();
   ModalManager.open('CARI_ERT');
@@ -535,7 +571,7 @@ function cerOnizle() {
     $('CER_PREV').innerHTML = plan.length + ' kalem: ' + plan.slice(0, 4).map(p => _tarihUzun(p.eski) + ' → <b>' + _tarihUzun(p.yeni) + '</b>').join(' · ')
       + (plan.length > 4 ? ' …' : '') + '<br><span style="color:var(--muted)">Tutarlar ve toplam borç değişmez.</span>';
     const ok = document.querySelector('#CARI_ERT .brow .bs');
-    if (ok) ok.textContent = $('CER_KAPSAM').value === 'gun' ? 'Günü Değiştir' : 'Ertele';
+    if (ok) ok.textContent = $('CER_KAPSAM').value === 'gun' ? 'Günü Değiştir' : 'Kaydet';
   } catch (e) { $('CER_PREV').innerHTML = '<span style="color:var(--danger)">' + window.esc(e.message) + '</span>'; }
 }
 
@@ -719,6 +755,7 @@ window.openCari     = openCari;
 window.saveCariAy   = saveCariAy;
 window.odeCariAy    = odeCariAy;
 window.openCariErtele = openCariErtele;
+window.savePlanAdi = savePlanAdi;
 window.cerOnizle      = cerOnizle;
 window.saveCariErtele = saveCariErtele;
 window.silCariAy    = silCariAy;

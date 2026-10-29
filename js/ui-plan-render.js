@@ -10,7 +10,7 @@ function getAllItems() {
   const credPays = [];
   // v8.231: kredi aciklamasi (cari kart) plan satirinda ayirt edici etiket olur ("ALI (Araç)")
   // v8.236: kredi kalemi kişi bağını (personId) taşır -> plan satırı cari kartı açar
-  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx, ...(c.desc?{desc:c.desc}:{}), ...(c.personId?{personId:c.personId}:{})})));
+  window.creds.forEach(c => c.pays.forEach((p,ii) => credPays.push({...p, name:c.name, currency:'TRY', _cid:c.id, _ii:p.idx, ...(c.desc?{desc:c.desc}:{}), ...(c.planAdi?{planAdi:c.planAdi}:{}), ...(c.personId?{personId:c.personId}:{})})));
   return [...window.pays, ...credPays];
 }
 
@@ -27,6 +27,7 @@ function buildMx(all) {
     const mk = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
     const rawKey = p._cid ? 'cred_'+p._cid : (p.groupId ? 'g_'+p.groupId : 'pay_'+String(Math.floor(Number(p.id))));
     if (!mx[rawKey]) mx[rawKey] = {_name: (p.personId && kisiAdi.get(p.personId)) || p.name, _personId: p.personId || null};
+    if (p.planAdi && !mx[rawKey]._planAdi) mx[rawKey]._planAdi = p.planAdi;   // v8.249: kullanıcının verdiği plan adı
     if (!mx[rawKey][mk]) mx[rawKey][mk] = {items:[], status:'pending', try:0, kalan:0, odenen:0};
     const oz = kalemOzet(p, window.rates);
     const cell = mx[rawKey][mk];

@@ -132,7 +132,7 @@ function openCell(keyEnc,month) {
   // v8.236: plandan kişinin cari kartına + erteleme (telefonda da görünür)
   const acikKalemler=c.items.filter(p=>kalemOzet(p,window.rates).kalan>0);
   h+=`<div class="dhizli">${pid&&(window.persons||[]).some(p=>p.id===pid)?`<button class="dact da-edit" onclick="closeDV();openCari('${window.esc(pid)}')">👤 Cari Kartı Aç</button>`:''}`
-    +acikKalemler.map(p=>{const r=p._cid?('c|'+p._cid+'|'+p._ii):('p|'+p.id);return `<button class="dact da-part" onclick="openCariErtele('${window.esc(r)}')">⏭ Ertele${acikKalemler.length>1?' · '+window.esc(window.fmtA(kalemOzet(p,window.rates).kalan,kalemOzet(p,window.rates).para)):''}</button>`;}).join('')
+    +acikKalemler.map(p=>{const r=p._cid?('c|'+p._cid+'|'+p._ii):('p|'+p.id);return `<button class="dact da-part" onclick="openCariErtele('${window.esc(r)}')">📅 Tarihi Değiştir${acikKalemler.length>1?' · '+window.esc(window.fmtA(kalemOzet(p,window.rates).kalan,kalemOzet(p,window.rates).para)):''}</button>`;}).join('')
     +`</div>`;
   h+=_borcIslemleri(key, pid, name, true);
   h+=`<div class="drow"><span class="dk">Tutar</span><span class="dv">${window.fmt(c.try)}${orig?` <span style="font-size:11px;opacity:.65">${window.fmtA(orig.amount,orig.currency)}</span>`:''}</span></div>`;
